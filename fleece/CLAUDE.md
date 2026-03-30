@@ -1,6 +1,6 @@
 # Fleece Module
 
-Last verified: 2026-03-29
+Last verified: 2026-03-30
 
 ## Purpose
 
@@ -8,7 +8,7 @@ Read-only decoder for Couchbase Lite's Fleece binary encoding format. Extracts n
 
 ## Contracts
 
-- **Exposes**: `FleeceDecoder.decode(ByteArray) -> FleeceValue?`, `FleeceDecoder.decodeAsDict(ByteArray) -> FleeceDict?`
+- **Exposes**: `FleeceDecoder.decode(ByteArray) -> FleeceValue?`, `FleeceDecoder.decodeAsDict(ByteArray, sharedKeys) -> FleeceDict?`, `FleeceDecoder.parseSharedKeys(ByteArray) -> List<String>`
 - **Guarantees**: Returns null on invalid/malformed data (never throws). Bounds-checked at every read.
 - **Expects**: Raw BLOB bytes from Couchbase `kv_default.body` column.
 
@@ -36,3 +36,4 @@ Read-only decoder for Couchbase Lite's Fleece binary encoding format. Extracts n
 - Pointer dereferencing is single-step. Caller (FleeceDecoder) handles pointer chains (narrow then wide).
 - Dict `count` is in lower 11 bits of header (not 12). Wide flag is bit 3 of header byte 0.
 - String length nibble of 15 triggers varint-encoded length (not literal 15).
+- Shared keys: Couchbase stores frequently-used dict keys as integer indices into a shared key table. `FleeceDict` resolves `TAG_SHORT_INT` keys via the `sharedKeys` list. Parse shared keys from the `info` blob of the `kvmeta` table using `FleeceDecoder.parseSharedKeys()`.

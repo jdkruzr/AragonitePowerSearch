@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Last verified: 2026-03-29
+Last verified: 2026-03-30
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -30,7 +30,7 @@ Aragonite Power Search is an Android app for Onyx Boox e-ink tablets that builds
 
 ## Project Structure
 
-- `app/` -- Android app module (Compose UI, Room database, repositories, indexer)
+- `app/` -- Android app module (Compose UI, Room database, repositories, indexer, foreground service)
 - `fleece/` -- Pure Kotlin Fleece decoder (no Android deps). See `fleece/CLAUDE.md`.
 - `docs/design-plans/` -- Validated design documents
 - `docs/implementation-plans/` -- Phase-by-phase implementation plans
@@ -53,7 +53,14 @@ Multi-module Gradle project: `:app` (Android app), `:fleece` (pure Kotlin Fleece
 
 ### Data Flow
 
-Scan `.ksync/point/` files -> diff against Room index -> read Couchbase metadata via Fleece decoder (titles, shape types) -> filter to handwriting shapes -> parse point files (binary TinyPoint records) -> read page dimensions from protobuf -> AragoniteHWR recognition -> store in Room + FTS4 -> search UI with 300ms debounce -> Intent deep-link to ScribbleActivity.
+Scan `.ksync/point/` files -> diff against Room index -> read Couchbase metadata via Fleece decoder (titles, shape types) -> filter to handwriting shapes -> parse point files (binary TinyPoint records) -> read page dimensions from protobuf -> AragoniteHWR recognition -> store in Room + FTS4 -> search UI with 300ms debounce -> Intent deep-link to ScribbleActivity via OpenNoteBean JSON.
+
+### Service Layer
+
+Package: `dev.aragonite.powersearch.service`
+
+- `IndexingService` -- Android foreground service (`dataSync` type) for long-running indexing. Exposes static `state: StateFlow<IndexingState>` for UI observation. Actions: start, pause, resume, stop, clearAndReindex. Uses `SupervisorJob` + `Dispatchers.IO`. Constructs its own `Indexer` and repositories per run. `START_NOT_STICKY` -- does not restart on process death.
+- `IndexingState` -- data class: `isRunning`, `isPaused`, `phase`, `current`, `total`, `error`, `pagesIndexed`.
 
 ### Repository Layer
 
@@ -61,7 +68,7 @@ Package: `dev.aragonite.powersearch.data`
 
 - `NoteMetadataRepository` -- reads Couchbase/Fleece databases. Discovers userId, reads NOTE_TREE for titles, reads per-note DBs for shape metadata. Filters to `HandwritingShapeTypes.TYPES`.
 - `StrokeDataRepository` -- reads point files via `PointFileParser`, converts TinyPoints to `HWRStroke`/`HWRPoint`, reads page dimensions from protobuf JSON.
-- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join.
+- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data.
 - `HWRRepository` -- wraps `AragoniteHWR` static API. Bind/unbind lifecycle. Returns null if not bound. Class is `open` for test overrides.
 - `Indexer` -- orchestrates full reindex pipeline. Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text).
 
@@ -76,13 +83,13 @@ Database: `power_search.db` (Room, version 1)
 
 Package: `dev.aragonite.powersearch.ui`
 
-- `SearchViewModel` -- exposes `SearchUiState` (results, isIndexing, progress, count, error). Query debounced at 300ms via Flow. Reindex triggered manually.
-- `SearchScreen` -- Compose UI with search field, result list, reindex button, progress display.
-- `SearchViewModelFactory` -- manual DI wiring. Creates all repositories and the Indexer.
+- `SearchViewModel` -- takes `IndexRepository` + `Context`. Delegates indexing to `IndexingService` (start/pause/resume/clearAndReindex). Observes `IndexingService.state` StateFlow for progress. Exposes `SearchUiState` (results, isIndexing, isPaused, progress, count, error). Query debounced at 300ms via Flow.
+- `SearchScreen` -- Compose UI with search field, result list, "Update Index" and "Rebuild from Scratch" buttons, animated/static progress bar, "X of Y pages indexed" label.
+- `SearchViewModelFactory` -- manual DI wiring. Creates `IndexRepository` only (indexing delegated to service).
 
 ## Deep-Link to Notes
 
-Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivity` with extras: `documentId`, `parentUniqueId`, `jump_from_document_path`.
+Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivity` with a single `OPEN_NOTE_BEAN` string extra containing JSON: `{"documentId":"...","parentUniqueId":"...","title":"..."}`. Discovered via JADX decompilation of `knote2-release.apk`. The `buildNoteIntent()` function in `SearchScreen.kt` constructs this Intent.
 
 ## Invariants
 
@@ -91,3 +98,7 @@ Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivi
 - FTS4 table is content-sync with `indexed_shapes` -- Room manages sync automatically.
 - `PointFileParser` returns empty list (never throws) on malformed files.
 - `FleeceDecoder` returns null (never throws) on invalid data.
+- `IndexingService` is `START_NOT_STICKY` -- Android will not restart it after process death.
+- `IndexingService.state` is a static `StateFlow` -- UI observes it without binding to the service.
+- "Rebuild from Scratch" cancels any running job, clears the index, then starts a fresh reindex.
+- Search queries are prefix-matched: each word gets a `*` suffix for search-as-you-type behavior.

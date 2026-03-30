@@ -1,5 +1,7 @@
 package dev.aragonite.fleece
 
+// pattern: Functional Core
+
 /**
  * Wraps a ByteArray at a specific offset and provides access to the Fleece-encoded value there.
  *

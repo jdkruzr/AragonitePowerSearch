@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data
 
+// pattern: Imperative Shell
+
 import dev.aragonite.hwr.HWRPoint
 import dev.aragonite.hwr.HWRStroke
 import org.json.JSONObject
@@ -22,9 +24,7 @@ class StrokeDataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"))
             .toList()
     }
 
-    fun readStrokesForShape(pointFile: File, shapeUuid: String): HWRStroke? {
-        val xref = PointFileParser.readXref(pointFile)
-        val entry = xref.find { it.shapeUuid == shapeUuid } ?: return null
+    fun readStrokesForShape(pointFile: File, entry: XrefEntry): HWRStroke? {
         val tinyPoints = PointFileParser.readShapePoints(pointFile, entry)
         if (tinyPoints.isEmpty()) return null
 
@@ -37,6 +37,13 @@ class StrokeDataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"))
             )
         }
         return HWRStroke(points = hwrPoints, createdAtMs = System.currentTimeMillis())
+    }
+
+    // Backward-compatible UUID-based lookup (re-reads xref, used by tests)
+    fun readStrokesForShapeByUuid(pointFile: File, shapeUuid: String): HWRStroke? {
+        val xref = PointFileParser.readXref(pointFile)
+        val entry = xref.find { it.shapeUuid == shapeUuid } ?: return null
+        return readStrokesForShape(pointFile, entry)
     }
 
     fun getPageDimensions(documentId: String, pageId: String): PageDimensions? {

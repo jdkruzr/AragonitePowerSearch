@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data
 
+// pattern: Imperative Shell
+
 import android.os.Environment
 import dev.aragonite.powersearch.data.db.IndexedShape
 import java.io.File
@@ -135,7 +137,7 @@ open class Indexer(
             // Filter to handwriting shapes if we have metadata
             if (handwritingShapeIds != null && entry.shapeUuid !in handwritingShapeIds) continue
 
-            val stroke = strokeData.readStrokesForShape(pointFile, entry.shapeUuid) ?: continue
+            val stroke = strokeData.readStrokesForShape(pointFile, entry) ?: continue
 
             // Recognize text (skip if HWR unavailable — AC2.3, AC4.6)
             val recognizedText = if (hwrAvailable) {

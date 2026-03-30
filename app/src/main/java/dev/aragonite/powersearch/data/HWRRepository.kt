@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data
 
+// pattern: Imperative Shell
+
 import android.content.Context
 import dev.aragonite.hwr.AragoniteHWR
 import dev.aragonite.hwr.HWRStroke

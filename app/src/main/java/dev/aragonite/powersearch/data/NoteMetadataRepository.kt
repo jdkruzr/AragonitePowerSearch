@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data
 
+// pattern: Imperative Shell
+
 import android.database.sqlite.SQLiteDatabase
 import dev.aragonite.fleece.FleeceDecoder
 import java.io.File

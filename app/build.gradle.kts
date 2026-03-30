@@ -11,6 +11,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.aragonite.powersearch"
+        // minSdk 30: Environment.isExternalStorageManager() (for "All Files Access" permission check)
+        // requires API 30. All target Boox devices are API 30+. This is an intentional platform baseline.
         minSdk = 30
         targetSdk = 35
         versionCode = 1

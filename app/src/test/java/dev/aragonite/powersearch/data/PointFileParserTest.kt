@@ -1,5 +1,6 @@
 package dev.aragonite.powersearch.data
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20,6 +21,11 @@ class PointFileParserTest {
             delete()
             mkdirs()
         }
+    }
+
+    @After
+    fun tearDown() {
+        tempDir.deleteRecursively()
     }
 
     private fun createSyntheticPointFile(): File {

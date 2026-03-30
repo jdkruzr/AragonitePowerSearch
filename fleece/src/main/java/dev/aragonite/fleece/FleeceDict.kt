@@ -1,5 +1,7 @@
 package dev.aragonite.fleece
 
+// pattern: Functional Core
+
 /**
  * Wraps a FleeceValue with tag 7 (dict) and provides key-value lookup.
  *

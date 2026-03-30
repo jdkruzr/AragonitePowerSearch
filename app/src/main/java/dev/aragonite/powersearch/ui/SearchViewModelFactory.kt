@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.ui
 
+// pattern: Imperative Shell
+
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider

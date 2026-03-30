@@ -18,7 +18,8 @@ Aragonite Power Search is an Android app for Onyx Boox e-ink tablets that builds
 - Depends on the sibling [AragoniteHWR](../AragoniteHWR) library for handwriting recognition via on-device IPC
 - Custom Fleece decoder (`:fleece` module, pure Kotlin, no Android deps) for reading Couchbase metadata
 - No DI framework -- manual construction via `SearchViewModelFactory`, matching AragoniteHWR conventions
-- Build config: compile SDK 35, min SDK 29, Java 17, Kotlin 2.0.21
+- Build config: compile SDK 35, min SDK 30, Java 17, Kotlin 2.0.21
+  - minSdk 30: Environment.isExternalStorageManager() (for "All Files Access" permission check) requires API 30. All target Boox devices are API 30+.
 
 ## Commands
 

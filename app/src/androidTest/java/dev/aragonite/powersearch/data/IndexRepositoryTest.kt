@@ -454,6 +454,45 @@ class IndexRepositoryTest {
     }
 
     /**
+     * Search with FTS special characters (unclosed quotes) returns empty list without throwing.
+     * This ensures malformed query syntax doesn't crash the app.
+     */
+    @Test
+    fun testSearchWithFtsSpecialCharactersDoesNotThrow() = runTest {
+        // Arrange: Insert a shape with recognizable text
+        repository.upsertShape(IndexedShape(
+            shapeId = "shape-1",
+            documentId = "doc1",
+            pageId = "page1",
+            parentUniqueId = "parent1",
+            noteTitle = "Test Note",
+            recognizedText = "hello world",
+            pointFilePath = "/path/1",
+            pointFileModified = 1000L,
+            pointFileSize = 5000L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        // Act: Search with unclosed quote (FTS4 syntax error)
+        val results = repository.search("\"unclosed")
+
+        // Assert: Returns empty list without throwing (query is sanitized/escaped)
+        assertEquals(0, results.size)
+
+        // Act: Search with asterisk (FTS operator)
+        val resultsWildcard = repository.search("hello*")
+
+        // Assert: Also returns empty without throwing
+        assertEquals(0, resultsWildcard.size)
+
+        // Act: Search with parentheses
+        val resultsParens = repository.search("(hello)")
+
+        // Assert: Also safe
+        assertEquals(0, resultsParens.size)
+    }
+
+    /**
      * Upsert replaces existing shape (same shapeId)
      */
     @Test

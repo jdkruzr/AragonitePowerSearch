@@ -125,7 +125,7 @@ class StrokeDataRepositoryTest {
         val file = createSyntheticPointFile("note123", "page456", "rev789")
         val repo = StrokeDataRepository(ksyncRoot)
 
-        val stroke = repo.readStrokesForShape(file, "550e8400-e29b-41d4-a716-446655440000")
+        val stroke = repo.readStrokesForShapeByUuid(file, "550e8400-e29b-41d4-a716-446655440000")
 
         assertNotNull("Stroke should not be null", stroke)
         assertNotNull("Points should not be null", stroke!!.points)
@@ -137,7 +137,7 @@ class StrokeDataRepositoryTest {
         val file = createSyntheticPointFile("note123", "page456", "rev789")
         val repo = StrokeDataRepository(ksyncRoot)
 
-        val stroke = repo.readStrokesForShape(file, "nonexistent-uuid")
+        val stroke = repo.readStrokesForShapeByUuid(file, "nonexistent-uuid")
 
         assertNull("Stroke should be null for non-existent UUID", stroke)
     }
@@ -147,7 +147,7 @@ class StrokeDataRepositoryTest {
         val file = createSyntheticPointFile("note123", "page456", "rev789")
         val repo = StrokeDataRepository(ksyncRoot)
 
-        val stroke = repo.readStrokesForShape(file, "550e8400-e29b-41d4-a716-446655440000")!!
+        val stroke = repo.readStrokesForShapeByUuid(file, "550e8400-e29b-41d4-a716-446655440000")!!
 
         val point1 = stroke.points[0]
         assertNotNull("Pressure should not be null", point1.pressure)

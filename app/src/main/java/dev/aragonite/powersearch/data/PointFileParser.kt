@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data
 
+// pattern: Functional Core
+
 import java.io.File
 import java.io.RandomAccessFile
 

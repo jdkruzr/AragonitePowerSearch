@@ -1,5 +1,7 @@
 package dev.aragonite.fleece
 
+// pattern: Functional Core
+
 /**
  * Entry point for decoding Fleece-encoded data.
  *

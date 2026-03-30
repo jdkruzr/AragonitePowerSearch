@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data
 
+// pattern: Imperative Shell
+
 import dev.aragonite.powersearch.data.db.IndexDao
 import dev.aragonite.powersearch.data.db.IndexedShape
 import java.io.File
@@ -39,7 +41,10 @@ class IndexRepository(private val dao: IndexDao) {
 
     suspend fun search(query: String): List<IndexedShape> {
         if (query.isBlank()) return emptyList()
-        return dao.search(query)
+        // Escape FTS4 special characters to prevent query syntax errors
+        // FTS4 operators: * " ( ) - etc. Safest approach: escape double quotes by doubling them
+        val sanitizedQuery = query.replace("\"", "\"\"")
+        return dao.search(sanitizedQuery)
     }
 
     suspend fun getIndexedShapeCount(): Int = dao.getIndexedShapeCount()

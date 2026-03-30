@@ -1,5 +1,7 @@
 package dev.aragonite.fleece
 
+// pattern: Functional Core
+
 /**
  * Wraps a FleeceValue with tag 6 (array) and provides indexed access.
  *

@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.data.db
 
+// pattern: Imperative Shell
+
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room

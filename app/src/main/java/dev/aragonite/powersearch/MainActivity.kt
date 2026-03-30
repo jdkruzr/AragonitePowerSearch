@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch
 
+// pattern: Imperative Shell
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -76,10 +78,12 @@ fun PowerSearchApp(
     viewModel: SearchViewModel
 ) {
     MaterialTheme {
-        Scaffold { padding ->
-            if (hasStoragePermission) {
-                SearchScreen(viewModel = viewModel)
-            } else {
+        if (hasStoragePermission) {
+            // SearchScreen provides its own Scaffold
+            SearchScreen(viewModel = viewModel)
+        } else {
+            // Permission-denied screen with its own Scaffold
+            Scaffold { padding ->
                 Column(
                     modifier = Modifier
                         .fillMaxSize()

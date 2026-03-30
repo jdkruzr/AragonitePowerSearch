@@ -1,5 +1,7 @@
 package dev.aragonite.powersearch.ui
 
+// pattern: Imperative Shell
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.aragonite.powersearch.data.IndexProgress
@@ -41,7 +43,14 @@ class SearchViewModel(
     val searchResults: StateFlow<List<IndexedShape>> = _query
         .debounce(300L)
         .flatMapLatest { q ->
-            flow { emit(indexRepository.search(q)) }
+            flow {
+                try {
+                    emit(indexRepository.search(q))
+                } catch (e: Exception) {
+                    // Return empty list on search query errors (e.g., malformed FTS syntax)
+                    emit(emptyList())
+                }
+            }
         }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 

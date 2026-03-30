@@ -3,6 +3,7 @@ package dev.aragonite.powersearch.data
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import java.io.File
 
@@ -16,13 +17,44 @@ class NoteMetadataRepositoryTest {
 
     @Test
     fun testDiscoverUserIdReturnsNullWhenCouchDirNotFound() {
+        // Create a dedicated empty temp directory with no couch subdirectory
         val tempDir = File.createTempFile("test", "").parentFile!!
-        val repo = NoteMetadataRepository(tempDir)
+        val emptyDir = File(tempDir, "empty-ksync-${System.nanoTime()}")
+        emptyDir.mkdir()
 
-        // If couch dir doesn't exist, should return null
-        val userId = repo.discoverUserId()
-        // Depending on temp dir, it might return null or a value
-        // This test mainly verifies the method doesn't crash
+        try {
+            val repo = NoteMetadataRepository(emptyDir)
+
+            // If couch dir doesn't exist, should return null
+            val userId = repo.discoverUserId()
+            assertNull(userId, "discoverUserId should return null when couch directory doesn't exist")
+        } finally {
+            emptyDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testDiscoverUserIdReturnsUserIdWhenNoteTreeDirExists() {
+        // Create a temp directory with a valid NOTE_TREE.cblite2 directory
+        val tempDir = File.createTempFile("test", "").parentFile!!
+        val ksyncDir = File(tempDir, "test-ksync-${System.nanoTime()}")
+        ksyncDir.mkdir()
+
+        val couchDir = File(ksyncDir, "couch")
+        couchDir.mkdir()
+
+        val noteTreeDir = File(couchDir, "someuser-NOTE_TREE.cblite2")
+        noteTreeDir.mkdir()
+
+        try {
+            val repo = NoteMetadataRepository(ksyncDir)
+
+            val userId = repo.discoverUserId()
+            assertNotNull(userId, "discoverUserId should return non-null when NOTE_TREE directory exists")
+            assertEquals("someuser", userId, "discoverUserId should extract user ID from directory name")
+        } finally {
+            ksyncDir.deleteRecursively()
+        }
     }
 
     @Test
@@ -43,19 +75,5 @@ class NoteMetadataRepositoryTest {
         // Non-existent database should return empty list
         val shapes = repo.getHandwritingShapes("nonexistent-user-id", "nonexistent-doc-id")
         assertEquals(emptyList(), shapes)
-    }
-
-    @Test
-    fun testHandwritingShapeTypesContainsOnlyHandwriting() {
-        // Verify the set contains exactly the expected types
-        val expected = setOf(2, 3, 4, 5, 15, 21, 22, 47, 60, 61)
-        assertEquals(expected, HandwritingShapeTypes.TYPES)
-
-        // Verify non-handwriting types are not in the set
-        val nonHandwritingTypes = listOf(0, 1, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 20, 25, 30)
-        for (type in nonHandwritingTypes) {
-            assertTrue(type !in HandwritingShapeTypes.TYPES,
-                "Type $type should not be in handwriting types")
-        }
     }
 }

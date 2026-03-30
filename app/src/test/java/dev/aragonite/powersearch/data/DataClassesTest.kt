@@ -30,23 +30,4 @@ class DataClassesTest {
         assertEquals(2, shape.shapeType)
         assertEquals("rev-001", shape.revisionId)
     }
-
-    @Test
-    fun testHandwritingShapeTypesContainsCorrectTypes() {
-        val expected = setOf(2, 3, 4, 5, 15, 21, 22, 47, 60, 61)
-        assertEquals(expected, HandwritingShapeTypes.TYPES)
-    }
-
-    @Test
-    fun testHandwritingShapeTypesHasExactlyTenElements() {
-        assertEquals(10, HandwritingShapeTypes.TYPES.size)
-    }
-
-    @Test
-    fun testNonHandwritingTypesNotInSet() {
-        val nonHandwritingTypes = listOf(0, 1, 6, 10, 20, 30)
-        for (type in nonHandwritingTypes) {
-            assertTrue(type !in HandwritingShapeTypes.TYPES, "Type $type should not be in handwriting types")
-        }
-    }
 }

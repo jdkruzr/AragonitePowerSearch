@@ -107,13 +107,4 @@ class HandwritingShapeTypesTest {
         assertFalse(62 in HandwritingShapeTypes.TYPES)
         assertFalse(100 in HandwritingShapeTypes.TYPES)
     }
-
-    @Test
-    fun testHandwritingShapeTypesIsReadOnly() {
-        // Verify the set is read-only (created with setOf() which returns immutable Set)
-        // An immutable set won't have any mutation methods
-        val setClass = HandwritingShapeTypes.TYPES::class.java
-        val isMutable = setClass.simpleName.contains("Mutable")
-        assertFalse(isMutable, "HandwritingShapeTypes.TYPES should not be a MutableSet")
-    }
 }

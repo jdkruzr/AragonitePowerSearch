@@ -4,6 +4,13 @@ import android.database.sqlite.SQLiteDatabase
 import dev.aragonite.fleece.FleeceDecoder
 import java.io.File
 
+/**
+ * Manages reading note metadata and shape information from Couchbase Lite databases.
+ *
+ * Note: This class uses hardcoded /sdcard/.ksync path, which is device-specific and intentional
+ * for Onyx Boox devices. The .ksync directory is where Boox stores all note and configuration data.
+ */
+@Suppress("SdCardPath")
 class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync")) {
 
     fun discoverUserId(): String? {

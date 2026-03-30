@@ -88,11 +88,9 @@ class IndexerTest {
             val allShapes = indexRepository.search("*") // FTS wildcard search if supported
             if (allShapes.isNotEmpty()) {
                 val shape = allShapes[0]
-                assertNotNull(shape.shapeId, "Shape should have shapeId")
-                assertNotNull(shape.documentId, "Shape should have documentId")
-                assertNotNull(shape.pageId, "Shape should have pageId")
-                assertTrue(shape.noteTitle.isNotEmpty() || shape.noteTitle.isEmpty(),
-                    "Shape should have noteTitle (may be empty)")
+                assertTrue(shape.shapeId.isNotEmpty(), "Shape should have populated shapeId")
+                assertTrue(shape.documentId.isNotEmpty(), "Shape should have populated documentId")
+                assertTrue(shape.pageId.isNotEmpty(), "Shape should have populated pageId")
                 // recognizedText may be empty if HWR failed, but field should exist
                 assertNotNull(shape.recognizedText, "Shape should have recognizedText field")
             }
@@ -102,38 +100,30 @@ class IndexerTest {
     /**
      * AC4.5: Storage permission check returns error when permission missing
      *
-     * This test mocks an unavailable storage permission by using a Indexer setup
-     * that would fail the Environment.isExternalStorageManager() check.
-     *
-     * On device: This can be tested by either:
-     * 1. Running on a fresh install before granting "All Files Access" permission
-     * 2. Revoking the permission before running the test
-     * 3. (For testing purposes) mocking the permission check
+     * This test injects a fake storageChecker that always returns false,
+     * simulating the absence of "All Files Access" permission.
      */
     @Test
     fun testReindexReturnsErrorWhenStoragePermissionMissing() = runTest {
-        // Note: This test is informative. On a real device without "All Files Access",
-        // the Indexer.reindex() call will return an error result.
-        // We can't directly test this without modifying Indexer for testability,
-        // so this test serves as documentation and can be run manually.
-
+        // Arrange: Create Indexer with fake storage checker that denies permission
         val hwrRepository = HWRRepository(context)
-        val indexer = Indexer(noteMetadataRepository, strokeDataRepository, indexRepository, hwrRepository)
+        val indexer = Indexer(
+            noteMetadataRepository,
+            strokeDataRepository,
+            indexRepository,
+            hwrRepository,
+            storageChecker = { false } // Inject fake checker that denies permission
+        )
 
-        // If permission is granted, this will succeed and find files.
-        // If permission is not granted, it will return error immediately.
+        // Act: Run reindex with denied storage permission
         val result = indexer.reindex()
 
-        // If reindex has error about storage, assert it contains "Storage permission"
-        if (result.error != null) {
-            assertTrue(result.error.contains("Storage permission") ||
-                       result.error.contains("permission") ||
-                       result.error.contains("No point directory"),
-                "Error should be about storage permission or point directory missing")
-            assertEquals(0, result.processed, "Should process 0 shapes when permission missing")
-            assertEquals(0, result.failed, "Should have 0 failures when permission missing")
-            assertEquals(0, result.deleted, "Should delete 0 shapes when permission missing")
-        }
+        // Assert: Should return error about storage permission with 0 processing
+        assertTrue(result.error != null, "Should return non-null error when storage permission missing")
+        assertTrue(result.error.contains("Storage permission"), "Error message should mention storage permission")
+        assertEquals(0, result.processed, "Should process 0 shapes when permission missing")
+        assertEquals(0, result.failed, "Should have 0 failures when permission missing")
+        assertEquals(0, result.deleted, "Should delete 0 shapes when permission missing")
     }
 
     /**
@@ -259,8 +249,7 @@ class IndexerTest {
         }
 
         // Assert: Progress callback was invoked
-        assertTrue(progressSteps.isNotEmpty() || true, // May be empty if no files to process
-            "Progress callback should be invoked (or no files found)")
+        assertTrue(progressSteps.isNotEmpty(), "Progress callback should have been invoked")
 
         // Common phases should be in progress
         if (progressSteps.isNotEmpty()) {

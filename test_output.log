@@ -1,0 +1,58 @@
+> Task :AragoniteHWR:lib:preBuild UP-TO-DATE
+> Task :fleece:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :AragoniteHWR:lib:preDebugBuild UP-TO-DATE
+> Task :AragoniteHWR:lib:writeDebugAarMetadata UP-TO-DATE
+> Task :AragoniteHWR:lib:generateDebugResValues UP-TO-DATE
+> Task :AragoniteHWR:lib:generateDebugResources UP-TO-DATE
+> Task :AragoniteHWR:lib:packageDebugResources UP-TO-DATE
+> Task :AragoniteHWR:lib:extractDeepLinksDebug UP-TO-DATE
+> Task :AragoniteHWR:lib:processDebugManifest UP-TO-DATE
+> Task :AragoniteHWR:lib:parseDebugLocalResources UP-TO-DATE
+> Task :AragoniteHWR:lib:generateDebugRFile UP-TO-DATE
+> Task :AragoniteHWR:lib:compileDebugLibraryResources UP-TO-DATE
+> Task :AragoniteHWR:lib:compileDebugAidl UP-TO-DATE
+> Task :fleece:compileKotlin UP-TO-DATE
+> Task :AragoniteHWR:lib:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :fleece:compileJava NO-SOURCE
+> Task :fleece:processResources NO-SOURCE
+> Task :fleece:classes UP-TO-DATE
+> Task :fleece:jar UP-TO-DATE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :AragoniteHWR:lib:compileDebugKotlin UP-TO-DATE
+> Task :AragoniteHWR:lib:javaPreCompileDebug UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :AragoniteHWR:lib:compileDebugJavaWithJavac UP-TO-DATE
+> Task :AragoniteHWR:lib:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :AragoniteHWR:lib:processDebugJavaRes UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :AragoniteHWR:lib:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:kspDebugKotlin
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:kspDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:testDebugUnitTest
+
+BUILD SUCCESSFUL in 1s
+42 actionable tasks: 7 executed, 35 up-to-date

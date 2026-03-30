@@ -22,11 +22,12 @@ class Indexer(
     private val noteMetadata: NoteMetadataRepository,
     private val strokeData: StrokeDataRepository,
     private val index: IndexRepository,
-    private val hwr: HWRRepository
+    private val hwr: HWRRepository,
+    private val storageChecker: () -> Boolean = { Environment.isExternalStorageManager() }
 ) {
     suspend fun reindex(onProgress: (IndexProgress) -> Unit = {}): IndexResult {
         // AC4.5: Check storage permission before accessing filesystem
-        if (!Environment.isExternalStorageManager()) {
+        if (!storageChecker()) {
             return IndexResult(0, 0, 0, "Storage permission required. Grant 'All Files Access' in Settings.")
         }
 
@@ -53,40 +54,41 @@ class Indexer(
 
         // Step 3: Bind HWR service (AC4.6: graceful handling if unavailable)
         val hwrAvailable = hwr.bind()
+        try {
+            // Step 4: Discover user ID and cache note metadata
+            val userId = noteMetadata.discoverUserId()
+            val noteMetadataMap: Map<String, NoteMetadata> = if (userId != null) {
+                noteMetadata.getNoteMetadata(userId).associateBy { it.documentId }
+            } else emptyMap()
 
-        // Step 4: Discover user ID and cache note metadata
-        val userId = noteMetadata.discoverUserId()
-        val noteMetadataMap: Map<String, NoteMetadata> = if (userId != null) {
-            noteMetadata.getNoteMetadata(userId).associateBy { it.documentId }
-        } else emptyMap()
+            // Cache handwriting shapes per document to avoid repeated DB reads
+            val handwritingShapeCache = mutableMapOf<String, Set<String>>()
 
-        // Cache handwriting shapes per document to avoid repeated DB reads
-        val handwritingShapeCache = mutableMapOf<String, Set<String>>()
-
-        // Step 5: Process new/modified files
-        val modifiedSet = diff.modifiedFiles.toSet()
-        for ((i, pointFile) in filesToProcess.withIndex()) {
-            onProgress(IndexProgress("Indexing", i + 1, total))
-            try {
-                // For modified files, remove old shapes before re-indexing to prevent stale entries
-                if (pointFile in modifiedSet) {
-                    index.deleteByPointFile(pointFile.absolutePath)
+            // Step 5: Process new/modified files
+            val modifiedSet = diff.modifiedFiles.toSet()
+            for ((i, pointFile) in filesToProcess.withIndex()) {
+                onProgress(IndexProgress("Indexing", i + 1, total))
+                try {
+                    // For modified files, remove old shapes before re-indexing to prevent stale entries
+                    if (pointFile in modifiedSet) {
+                        index.deleteByPointFile(pointFile.absolutePath)
+                    }
+                    processPointFile(pointFile, userId, hwrAvailable, noteMetadataMap, handwritingShapeCache)
+                    processed++
+                } catch (e: Exception) {
+                    failed++
                 }
-                processPointFile(pointFile, userId, hwrAvailable, noteMetadataMap, handwritingShapeCache)
-                processed++
-            } catch (e: Exception) {
-                failed++
             }
-        }
 
-        // Step 6: Remove deleted files
-        for (path in diff.deletedPaths) {
-            index.deleteByPointFile(path)
-            deleted++
+            // Step 6: Remove deleted files
+            for (path in diff.deletedPaths) {
+                index.deleteByPointFile(path)
+                deleted++
+            }
+        } finally {
+            // Step 7: Unbind HWR (always, even if earlier steps threw)
+            hwr.unbind()
         }
-
-        // Step 7: Unbind HWR
-        hwr.unbind()
 
         val error = if (!hwrAvailable) "HWR service unavailable — shapes indexed without recognition text" else null
         return IndexResult(processed, failed, deleted, error)

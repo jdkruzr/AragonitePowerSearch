@@ -33,10 +33,15 @@ class FleeceValue(val data: ByteArray, val offset: Int) {
      * Dereference a pointer value. Handles both narrow (2-byte) and wide (4-byte) pointers.
      * Narrow pointer: 14-bit offset in big-endian 2 bytes.
      * Wide pointer: 30-bit offset in big-endian 4 bytes.
-     * Recursively dereferences until a non-pointer is found.
+     * Single-step dereference only (does not recurse). Caller handles pointer chains.
+     * Returns null if pointer is malformed (out of bounds).
      */
-    fun deref(wide: Boolean): FleeceValue {
+    fun deref(wide: Boolean): FleeceValue? {
         if (!isPointer) return this
+
+        // Bounds check: ensure we can read the pointer header
+        val pointerSize = if (wide) 4 else 2
+        if (offset + pointerSize > data.size) return null
 
         val offsetInTwoByteUnits = if (wide) {
             // Wide pointer: 4 bytes, offset in low 30 bits
@@ -53,21 +58,21 @@ class FleeceValue(val data: ByteArray, val offset: Int) {
 
         val byteOffset = offsetInTwoByteUnits * 2
         val targetOffset = offset - byteOffset
-        val targetValue = FleeceValue(data, targetOffset)
 
-        // Recursively dereference if target is also a pointer
-        return if (targetValue.isPointer) {
-            // After narrow, try wide
-            targetValue.deref(wide = !wide)
-        } else {
-            targetValue
-        }
+        // Bounds check: ensure target offset is valid (within 2-byte header at minimum)
+        if (targetOffset < 0 || targetOffset + 1 >= data.size) return null
+
+        return FleeceValue(data, targetOffset)
     }
 
     /**
      * Decode as an integer (tag 0 for small int, tag 1 for long int).
+     * Returns null if bounds checking fails (malformed value).
      */
-    fun asInt(): Int {
+    fun asInt(): Int? {
+        // Bounds check: at least 2 bytes for header
+        if (offset + 1 >= data.size) return null
+
         return when (tag) {
             TAG_SHORT_INT -> {
                 // 12-bit signed value in low 12 bits of 2-byte header
@@ -81,8 +86,11 @@ class FleeceValue(val data: ByteArray, val offset: Int) {
             }
             TAG_INT -> {
                 // Long int: tag 1, next byte encodes length, followed by LE bytes
+                if (offset + 2 > data.size) return null
                 val lengthByte = data[offset + 1].toInt() and 0xFF
                 val length = lengthByte and 0x0F  // Low 4 bits = length
+                // Bounds check: ensure all length bytes are available
+                if (offset + 2 + length > data.size) return null
                 var result = 0
                 for (i in 0 until length) {
                     val b = data[offset + 2 + i].toInt() and 0xFF
@@ -90,25 +98,35 @@ class FleeceValue(val data: ByteArray, val offset: Int) {
                 }
                 result
             }
-            else -> 0
+            else -> null
         }
     }
 
     /**
      * Decode as a boolean (tag 3, special values: 4 = false, 8 = true).
+     * Returns null if bounds checking fails or value is not a valid boolean.
      */
-    fun asBool(): Boolean {
-        if (tag != TAG_SPECIAL) return false
+    fun asBool(): Boolean? {
+        // Bounds check: at least 2 bytes for header
+        if (offset + 1 >= data.size) return null
+        if (tag != TAG_SPECIAL) return null
         val specialValue = data[offset + 1].toInt() and 0xFF
-        return specialValue == 8
+        return when (specialValue) {
+            4 -> false
+            8 -> true
+            else -> null  // Invalid special value
+        }
     }
 
     /**
      * Decode as a string (tag 4).
      * Length is in low 4 bits of byte 0. If 15, a varint follows, then UTF-8 bytes.
+     * Returns null if bounds checking fails (malformed value).
      */
-    fun asString(): String {
-        if (tag != TAG_STRING) return ""
+    fun asString(): String? {
+        // Bounds check: at least 2 bytes for header
+        if (offset + 1 >= data.size) return null
+        if (tag != TAG_STRING) return null
 
         var byteOffset = offset + 1
         val lengthNibble = data[offset].toInt() and 0x0F
@@ -118,6 +136,7 @@ class FleeceValue(val data: ByteArray, val offset: Int) {
             var varintValue = 0
             var shift = 0
             while (true) {
+                if (byteOffset >= data.size) return null  // Bounds check during varint decode
                 val b = data[byteOffset].toInt() and 0xFF
                 byteOffset++
                 varintValue = varintValue or ((b and 0x7F) shl shift)
@@ -128,6 +147,9 @@ class FleeceValue(val data: ByteArray, val offset: Int) {
         } else {
             lengthNibble
         }
+
+        // Bounds check: ensure all string bytes are available
+        if (byteOffset + length > data.size) return null
 
         return data.decodeToString(byteOffset, byteOffset + length)
     }

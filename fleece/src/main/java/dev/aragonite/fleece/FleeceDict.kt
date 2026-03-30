@@ -56,7 +56,7 @@ class FleeceDict(val value: FleeceValue) {
 
             val keySlotValue = FleeceValue(value.data, keySlotOffset)
             val resolvedKey = if (keySlotValue.isPointer) {
-                keySlotValue.deref(wide = isWide)
+                keySlotValue.deref(wide = isWide) ?: continue
             } else {
                 keySlotValue
             }
@@ -74,10 +74,11 @@ class FleeceDict(val value: FleeceValue) {
      * Convenience method: get a string value by key.
      *
      * Resolves pointer if needed before reading the scalar value.
+     * Returns null if key not found, pointer is malformed, or value is not a string.
      */
     fun getString(key: String): String? {
         val value = get(key) ?: return null
-        val resolved = if (value.isPointer) value.deref(wide = isWide) else value
+        val resolved = if (value.isPointer) value.deref(wide = isWide) ?: return null else value
         return resolved.asString()
     }
 
@@ -85,10 +86,11 @@ class FleeceDict(val value: FleeceValue) {
      * Convenience method: get an integer value by key.
      *
      * Resolves pointer if needed before reading the scalar value.
+     * Returns null if key not found, pointer is malformed, or value is not an integer.
      */
     fun getInt(key: String): Int? {
         val value = get(key) ?: return null
-        val resolved = if (value.isPointer) value.deref(wide = isWide) else value
+        val resolved = if (value.isPointer) value.deref(wide = isWide) ?: return null else value
         return resolved.asInt()
     }
 }

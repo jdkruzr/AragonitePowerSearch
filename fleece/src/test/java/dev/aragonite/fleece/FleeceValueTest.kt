@@ -3,6 +3,7 @@ package dev.aragonite.fleece
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class FleeceValueTest {
@@ -56,19 +57,45 @@ class FleeceValueTest {
     }
 
     @Test
+    fun testIntOutOfBounds() {
+        // Single byte only (no second byte for header)
+        val data = byteArrayOf(0x00)
+        val value = FleeceValue(data, 0)
+        assertEquals(null, value.asInt())
+    }
+
+    @Test
     fun testBoolFalseDecoding() {
-        // Special: tag 3, low nibble = 4 for false
-        val data = byteArrayOf(0x34, 0x00)
+        // Special: tag 3, byte 1 = 4 for false
+        val data = byteArrayOf(0x30, 0x04)
         val value = FleeceValue(data, 0)
         assertEquals(false, value.asBool())
     }
 
     @Test
+    fun testBoolNullDecoding() {
+        // Special: tag 3, byte 1 = 0 for null/null special value
+        val data = byteArrayOf(0x30, 0x00)
+        val value = FleeceValue(data, 0)
+        val result = value.asBool()
+        // null special value should not decode as true or false
+        assertEquals(null, result)
+    }
+
+    @Test
     fun testBoolTrueDecoding() {
-        // Special: tag 3, low nibble = 8 for true, byte 1 = 0x08
+        // Special: tag 3, byte 1 = 8 for true
         val data = byteArrayOf(0x30, 0x08)
         val value = FleeceValue(data, 0)
         assertEquals(true, value.asBool())
+    }
+
+    @Test
+    fun testBoolOutOfBounds() {
+        // Single byte only (no second byte for header)
+        val data = byteArrayOf(0x30)
+        val value = FleeceValue(data, 0)
+        assertEquals(null, value.asBool())
     }
 
     @Test
@@ -90,6 +117,14 @@ class FleeceValueTest {
     }
 
     @Test
+    fun testStringOutOfBounds() {
+        // String header says 5 bytes, but only 2 available
+        val data = byteArrayOf(0x45, 0x41, 0x42)
+        val value = FleeceValue(data, 0)
+        assertEquals(null, value.asString())
+    }
+
+    @Test
     fun testNarrowPointerDereference() {
         // Build layout: [int at offset 0] [pointer at offset 2]
         // Int: 0x00, 0x42 = small int, value 66
@@ -103,6 +138,7 @@ class FleeceValueTest {
         assertTrue(pointerValue.isPointer)
 
         val dereferenced = pointerValue.deref(wide = false)
+        assertNotNull(dereferenced)
         assertEquals(66, dereferenced.asInt())
     }
 
@@ -117,6 +153,7 @@ class FleeceValueTest {
         assertTrue(pointerValue.isPointer)
 
         val dereferenced = pointerValue.deref(wide = true)
+        assertNotNull(dereferenced)
         assertEquals(66, dereferenced.asInt())
     }
 
@@ -129,6 +166,18 @@ class FleeceValueTest {
 
         val pointerValue = FleeceValue(data, 2)
         val dereferenced = pointerValue.deref(wide = false)
+        assertNotNull(dereferenced)
         assertEquals(66, dereferenced.asInt())
+    }
+
+    @Test
+    fun testPointerOutOfBounds() {
+        // Pointer header tries to read beyond data
+        val tooShort = byteArrayOf(0x80.toByte())
+        val pointerValue = FleeceValue(tooShort, 0)
+        assertTrue(pointerValue.isPointer)
+
+        val dereferenced = pointerValue.deref(wide = false)
+        assertEquals(null, dereferenced)
     }
 }

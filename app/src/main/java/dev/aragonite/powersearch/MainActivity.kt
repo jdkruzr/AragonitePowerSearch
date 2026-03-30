@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.aragonite.powersearch.ui.SearchScreen
+import dev.aragonite.powersearch.ui.SearchViewModel
+import dev.aragonite.powersearch.ui.SearchViewModelFactory
 
 class MainActivity : ComponentActivity() {
 
@@ -37,10 +41,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         hasStoragePermission = Environment.isExternalStorageManager()
+
+        val viewModel: SearchViewModel by viewModels {
+            SearchViewModelFactory(applicationContext)
+        }
+
         setContent {
             PowerSearchApp(
                 hasStoragePermission = hasStoragePermission,
-                onRequestPermission = ::requestStoragePermission
+                onRequestPermission = ::requestStoragePermission,
+                viewModel = viewModel
             )
         }
     }
@@ -60,24 +70,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun PowerSearchApp(hasStoragePermission: Boolean, onRequestPermission: () -> Unit) {
+fun PowerSearchApp(
+    hasStoragePermission: Boolean,
+    onRequestPermission: () -> Unit,
+    viewModel: SearchViewModel
+) {
     MaterialTheme {
         Scaffold { padding ->
             if (hasStoragePermission) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("Power Search", style = MaterialTheme.typography.headlineMedium)
-                    Text(
-                        "Ready. Search UI coming in Phase 6.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
+                SearchScreen(viewModel = viewModel)
             } else {
                 Column(
                     modifier = Modifier

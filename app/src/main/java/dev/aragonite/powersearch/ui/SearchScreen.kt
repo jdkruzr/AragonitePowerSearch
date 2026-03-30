@@ -163,8 +163,14 @@ private fun EmptyState(message: String) {
     }
 }
 
-private fun openNote(context: Context, shape: IndexedShape) {
-    val intent = Intent().apply {
+/**
+ * Builds an Intent to open a note in BOOX Notes (ScribbleActivity).
+ *
+ * Extracts the Intent construction logic for testability.
+ * The intent includes documentId, parentUniqueId, and a jump_from_document_path identifier.
+ */
+fun buildNoteIntent(shape: IndexedShape): Intent {
+    return Intent().apply {
         component = ComponentName(
             "com.onyx.android.note",
             "com.onyx.android.note.note.ui.ScribbleActivity"
@@ -175,5 +181,9 @@ private fun openNote(context: Context, shape: IndexedShape) {
         // It is not a real filesystem path — it's an identifier string. Using the app package name.
         putExtra("jump_from_document_path", "dev.aragonite.powersearch")
     }
+}
+
+private fun openNote(context: Context, shape: IndexedShape) {
+    val intent = buildNoteIntent(shape)
     context.startActivity(intent)
 }

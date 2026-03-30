@@ -27,3 +27,5 @@ Thumbs.db
 # Kotlin
 .kotlin/
 
+# Build and test logs
+*.log

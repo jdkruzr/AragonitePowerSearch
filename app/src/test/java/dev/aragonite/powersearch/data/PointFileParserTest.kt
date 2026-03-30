@@ -2,14 +2,12 @@ package dev.aragonite.powersearch.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
 import kotlin.math.abs
 
 class PointFileParserTest {
@@ -119,7 +117,7 @@ class PointFileParserTest {
     }
 
     @Test
-    fun testReadShapePointsDecodsPressure() {
+    fun testReadShapePointsDecodesPressure() {
         val file = createSyntheticPointFile()
         val entries = PointFileParser.readXref(file)
         val entry = entries[0]
@@ -187,5 +185,40 @@ class PointFileParserTest {
         assertEquals("First point time should be 50", 50, points[0].time)
         assertEquals("Second point time should be 100", 100, points[1].time)
         assertEquals("Third point time should be 150", 150, points[2].time)
+    }
+
+    @Test
+    fun testReadXrefWithEmptyFile() {
+        val file = File(tempDir, "empty.bin")
+        file.createNewFile()
+
+        val entries = PointFileParser.readXref(file)
+
+        assertTrue("Empty file should return empty list", entries.isEmpty())
+    }
+
+    @Test
+    fun testReadXrefWithFileLessThanFourBytes() {
+        val file = File(tempDir, "too_small.bin")
+        file.writeBytes(byteArrayOf(1, 2, 3))
+
+        val entries = PointFileParser.readXref(file)
+
+        assertTrue("File < 4 bytes should return empty list", entries.isEmpty())
+    }
+
+    @Test
+    fun testReadShapePointsWithEntryBeyondFileBounds() {
+        val file = createSyntheticPointFile()
+        // Create an entry that points beyond the actual file bounds
+        val invalidEntry = XrefEntry(
+            shapeUuid = "invalid",
+            dataOffset = file.length().toInt() + 100,
+            dataLength = 20
+        )
+
+        val points = PointFileParser.readShapePoints(file, invalidEntry)
+
+        assertTrue("Entry beyond file bounds should return empty list", points.isEmpty())
     }
 }

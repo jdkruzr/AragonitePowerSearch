@@ -37,6 +37,7 @@ dependencies {
     // Compose BOM — manages all Compose artifact versions
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
+    androidTestImplementation(composeBom)
 
     // Compose
     implementation("androidx.compose.ui:ui")
@@ -60,6 +61,7 @@ dependencies {
 
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
@@ -73,4 +75,6 @@ dependencies {
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     androidTestImplementation(kotlin("test"))
     androidTestImplementation(kotlin("test-junit"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.compose.ui:ui-test")
 }

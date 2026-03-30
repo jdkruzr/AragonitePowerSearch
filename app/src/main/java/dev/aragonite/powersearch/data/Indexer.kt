@@ -18,14 +18,14 @@ data class IndexResult(
 )
 
 @Suppress("SdCardPath")
-class Indexer(
+open class Indexer(
     private val noteMetadata: NoteMetadataRepository,
     private val strokeData: StrokeDataRepository,
     private val index: IndexRepository,
     private val hwr: HWRRepository,
     private val storageChecker: () -> Boolean = { Environment.isExternalStorageManager() }
 ) {
-    suspend fun reindex(onProgress: (IndexProgress) -> Unit = {}): IndexResult {
+    open suspend fun reindex(onProgress: (IndexProgress) -> Unit = {}): IndexResult {
         // AC4.5: Check storage permission before accessing filesystem
         if (!storageChecker()) {
             return IndexResult(0, 0, 0, "Storage permission required. Grant 'All Files Access' in Settings.")

@@ -1,10 +1,10 @@
 package dev.aragonite.powersearch.ui
 
-import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.aragonite.powersearch.data.db.IndexedShape
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
 
 /**
@@ -156,9 +156,10 @@ class DeepLinkTest {
         val intent = buildNoteIntent(shape)
 
         // Assert all properties
-        assert(intent.component != null) { "Component should not be null" }
-        assertEquals("com.onyx.android.note", intent.component!!.packageName)
-        assertEquals("com.onyx.android.note.note.ui.ScribbleActivity", intent.component!!.className)
+        val component = intent.component
+        assertNotNull(component, "Component should not be null")
+        assertEquals("com.onyx.android.note", component.packageName)
+        assertEquals("com.onyx.android.note.note.ui.ScribbleActivity", component.className)
         assertEquals("test-doc-id", intent.getStringExtra("documentId"))
         assertEquals("test-parent-id", intent.getStringExtra("parentUniqueId"))
         assertEquals("dev.aragonite.powersearch", intent.getStringExtra("jump_from_document_path"))

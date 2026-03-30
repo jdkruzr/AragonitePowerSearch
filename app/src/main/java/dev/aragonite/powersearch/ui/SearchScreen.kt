@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.aragonite.powersearch.data.db.IndexedShape
 
@@ -81,13 +82,19 @@ fun SearchScreen(viewModel: SearchViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
+                            .testTag("LinearProgressIndicator")
                     )
                     Text(
                         text = "${progress.phase}: ${progress.current}/${progress.total}",
                         style = MaterialTheme.typography.bodySmall
                     )
                 } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .testTag("LinearProgressIndicator")
+                    )
                 }
             }
 

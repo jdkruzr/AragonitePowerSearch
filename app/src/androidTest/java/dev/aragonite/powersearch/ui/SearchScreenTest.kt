@@ -1,11 +1,9 @@
 package dev.aragonite.powersearch.ui
 
 import androidx.compose.material3.Surface
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -215,20 +213,58 @@ class SearchScreenTest {
      */
     @Test
     fun testReindexButtonShowsDisabledState() {
+        // Use FakeIndexer to pause indexing mid-progress
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val fakeIndexer = dev.aragonite.powersearch.data.FakeIndexer(context)
+        val testViewModel = SearchViewModel(indexRepository, fakeIndexer)
+
         composeRule.setContent {
             Surface {
-                SearchScreen(viewModel)
+                SearchScreen(testViewModel)
             }
         }
 
-        // Find and verify initial state
+        // Verify initial state: button is enabled and shows "Reindex"
+        composeRule.onNodeWithText("Reindex").assertIsDisplayed()
         composeRule.onNodeWithText("Reindex").assertIsEnabled()
 
-        // Trigger indexing (in a real scenario)
-        // For this test, we verify the button exists and is enabled initially
-        val reindexButton = composeRule.onNodeWithText("Reindex")
-        reindexButton.assertIsDisplayed()
-        reindexButton.assertIsEnabled()
+        // Tap the reindex button
+        composeRule.onNodeWithText("Reindex").performClick()
+
+        // Wait for the button text to change to "Indexing..."
+        composeRule.waitUntil(timeoutMillis = 1000) {
+            try {
+                composeRule.onNodeWithText("Indexing...").assertIsDisplayed()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        // Assert button is now disabled
+        composeRule.onNodeWithText("Indexing...").assertIsDisplayed()
+        composeRule.onNodeWithText("Indexing...").assertIsNotEnabled()
+
+        // Assert LinearProgressIndicator is displayed during indexing
+        composeRule.onNode(
+            androidx.compose.ui.test.hasTestTag("LinearProgressIndicator")
+        ).assertIsDisplayed()
+
+        // Complete the indexing
+        fakeIndexer.completeIndexing()
+
+        // Wait for button to re-enable and show "Reindex" again
+        composeRule.waitUntil(timeoutMillis = 1000) {
+            try {
+                composeRule.onNodeWithText("Reindex").assertIsEnabled()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        // Assert button is enabled again
+        composeRule.onNodeWithText("Reindex").assertIsEnabled()
     }
 
     /**

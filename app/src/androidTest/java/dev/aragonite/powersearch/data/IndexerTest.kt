@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.aragonite.powersearch.data.db.SearchDatabase
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,7 +66,7 @@ class IndexerTest {
      * It verifies that:
      * - The reindex process completes without throwing
      * - At least some shapes are recognized and indexed
-     * - Indexed shapes have populated metadata fields
+     * - Indexed shapes have populated metadata fields (including noteTitle)
      */
     @Test
     fun testReindexProcessesShapesAndStoresResults() = runTest {
@@ -83,18 +84,20 @@ class IndexerTest {
 
         // If we indexed any shapes, verify they have required fields
         val shapeCount = indexRepository.getIndexedShapeCount()
-        if (shapeCount > 0) {
-            // Search for any shape to verify it was stored correctly
-            val allShapes = indexRepository.search("*") // FTS wildcard search if supported
-            if (allShapes.isNotEmpty()) {
-                val shape = allShapes[0]
-                assertTrue(shape.shapeId.isNotEmpty(), "Shape should have populated shapeId")
-                assertTrue(shape.documentId.isNotEmpty(), "Shape should have populated documentId")
-                assertTrue(shape.pageId.isNotEmpty(), "Shape should have populated pageId")
-                // recognizedText may be empty if HWR failed, but field should exist
-                assertNotNull(shape.recognizedText, "Shape should have recognizedText field")
-            }
-        }
+        Assume.assumeTrue("Device has indexed shapes", shapeCount > 0)
+
+        // Search for any shape to verify it was stored correctly
+        val allShapes = indexRepository.search("*") // FTS wildcard search if supported
+        Assume.assumeTrue("Device has indexed shapes to search", allShapes.isNotEmpty())
+
+        val shape = allShapes[0]
+        assertTrue(shape.shapeId.isNotEmpty(), "Shape should have populated shapeId")
+        assertTrue(shape.documentId.isNotEmpty(), "Shape should have populated documentId")
+        assertTrue(shape.pageId.isNotEmpty(), "Shape should have populated pageId")
+        // recognizedText may be empty if HWR failed, but field should exist
+        assertNotNull(shape.recognizedText, "Shape should have recognizedText field")
+        // noteTitle may be empty for untitled notes, but field should exist (non-null)
+        assertNotNull(shape.noteTitle, "Shape should have noteTitle field")
     }
 
     /**
@@ -151,9 +154,15 @@ class IndexerTest {
 
         // If shapes were indexed (device has notes), they should have empty recognizedText
         val shapeCount = indexRepository.getIndexedShapeCount()
-        if (shapeCount > 0) {
-            // Shapes should be indexed with empty recognizedText when HWR unavailable
-            // Note: Can't verify directly without real device data
+        Assume.assumeTrue("Device has indexed shapes", shapeCount > 0)
+
+        // When HWR is unavailable, all indexed shapes should have empty recognizedText
+        val allShapes = indexRepository.search("*")
+        Assume.assumeTrue("Device has indexed shapes to search", allShapes.isNotEmpty())
+
+        for (shape in allShapes) {
+            assertTrue(shape.recognizedText.isEmpty(),
+                "Shape should have empty recognizedText when HWR unavailable, but got: '${shape.recognizedText}'")
         }
     }
 

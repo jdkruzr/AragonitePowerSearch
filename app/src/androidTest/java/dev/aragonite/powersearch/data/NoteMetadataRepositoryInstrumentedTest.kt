@@ -3,6 +3,7 @@ package dev.aragonite.powersearch.data
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.Assume
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.assertEquals
@@ -37,34 +38,36 @@ class NoteMetadataRepositoryInstrumentedTest {
     @Test
     fun testGetNoteMetadataExtractsTitleAndParentUniqueId() {
         // AC1.1: Call getNoteMetadata() and verify title and parentUniqueId are extracted
-        val userId = repository.discoverUserId() ?: return // Skip if no user ID found
+        val userId = repository.discoverUserId()
+        Assume.assumeTrue("Device has user ID", userId != null)
 
-        val metadata = repository.getNoteMetadata(userId)
-        if (metadata.isNotEmpty()) {
-            // If we have notes, verify each has required fields
-            for (note in metadata) {
-                assertTrue(note.documentId.isNotEmpty(), "Note documentId should not be empty")
-                assertTrue(note.title.isNotEmpty(), "Note title should not be empty")
-                // parentUniqueId can be empty, but documentId and title must exist
-            }
+        val metadata = repository.getNoteMetadata(userId!!)
+        Assume.assumeTrue("Device has notes", metadata.isNotEmpty())
+
+        // If we have notes, verify each has required fields
+        for (note in metadata) {
+            assertTrue(note.documentId.isNotEmpty(), "Note documentId should not be empty")
+            assertTrue(note.title.isNotEmpty(), "Note title should not be empty")
+            // parentUniqueId can be empty, but documentId and title must exist
         }
     }
 
     @Test
     fun testGetHandwritingShapesFiltersToHandwritingTypesOnly() {
         // AC1.4: Verify that only handwriting shape types are returned
-        val userId = repository.discoverUserId() ?: return // Skip if no user ID found
+        val userId = repository.discoverUserId()
+        Assume.assumeTrue("Device has user ID", userId != null)
 
-        val notes = repository.getNoteMetadata(userId)
-        if (notes.isNotEmpty()) {
-            val firstNote = notes.first()
-            val shapes = repository.getHandwritingShapes(userId, firstNote.documentId)
+        val notes = repository.getNoteMetadata(userId!!)
+        Assume.assumeTrue("Device has notes", notes.isNotEmpty())
 
-            // If we have shapes, verify they're all handwriting types
-            for (shape in shapes) {
-                assertTrue(shape.shapeType in HandwritingShapeTypes.TYPES,
-                    "Shape type ${shape.shapeType} should be in handwriting types")
-            }
+        val firstNote = notes.first()
+        val shapes = repository.getHandwritingShapes(userId, firstNote.documentId)
+
+        // If we have shapes, verify they're all handwriting types
+        for (shape in shapes) {
+            assertTrue(shape.shapeType in HandwritingShapeTypes.TYPES,
+                "Shape type ${shape.shapeType} should be in handwriting types")
         }
     }
 
@@ -78,9 +81,10 @@ class NoteMetadataRepositoryInstrumentedTest {
     @Test
     fun testGetHandwritingShapesReturnsEmptyListForInvalidDocumentId() {
         // Verify graceful handling of invalid document IDs
-        val userId = repository.discoverUserId() ?: return // Skip if no user ID found
+        val userId = repository.discoverUserId()
+        Assume.assumeTrue("Device has user ID", userId != null)
 
-        val shapes = repository.getHandwritingShapes(userId, "invalid-document-id-that-does-not-exist")
+        val shapes = repository.getHandwritingShapes(userId!!, "invalid-document-id-that-does-not-exist")
         assertEquals(emptyList(), shapes)
     }
 }

@@ -9,6 +9,7 @@ import dev.aragonite.powersearch.data.IndexRepository
 import dev.aragonite.powersearch.data.Indexer
 import dev.aragonite.powersearch.data.db.IndexedShape
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SearchUiState(
     val results: List<IndexedShape> = emptyList(),
@@ -56,9 +58,8 @@ class SearchViewModel(
 
     init {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                indexedShapeCount = indexRepository.getIndexedShapeCount()
-            )
+            val count = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() }
+            _uiState.value = _uiState.value.copy(indexedShapeCount = count)
         }
         // Collect search results into UI state
         viewModelScope.launch {
@@ -77,13 +78,15 @@ class SearchViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isIndexing = true, error = null)
             try {
-                val result = indexer.reindex { progress ->
-                    _uiState.value = _uiState.value.copy(indexProgress = progress)
+                val result = withContext(Dispatchers.IO) {
+                    indexer.reindex { progress ->
+                        _uiState.value = _uiState.value.copy(indexProgress = progress)
+                    }
                 }
                 _uiState.value = _uiState.value.copy(
                     isIndexing = false,
                     indexProgress = null,
-                    indexedShapeCount = indexRepository.getIndexedShapeCount(),
+                    indexedShapeCount = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() },
                     error = result.error
                 )
             } catch (e: Exception) {

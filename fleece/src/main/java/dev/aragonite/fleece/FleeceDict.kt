@@ -9,7 +9,7 @@ package dev.aragonite.fleece
  * Each slot is 2 bytes (narrow) or 4 bytes (wide). The wide flag is bit 3 of header byte 0.
  * Count (number of pairs) is in the lower 11 bits of the 2-byte header.
  */
-class FleeceDict(val value: FleeceValue) {
+class FleeceDict(val value: FleeceValue, private val sharedKeys: List<String> = emptyList()) {
 
     /**
      * Number of key-value pairs in the dict.
@@ -44,6 +44,41 @@ class FleeceDict(val value: FleeceValue) {
      * if so return the corresponding value slot. Key slots are at headerOffset + 2 + i * 2 * slotWidth,
      * value slots are at headerOffset + 2 + i * 2 * slotWidth + slotWidth.
      */
+    /**
+     * Resolve a key slot value to a key name string.
+     * Handles both inline string keys and shared key indices (small ints).
+     */
+    private fun resolveKeyName(keySlotValue: FleeceValue): String? {
+        val resolved = if (keySlotValue.isPointer) {
+            keySlotValue.deref(wide = isWide) ?: return null
+        } else {
+            keySlotValue
+        }
+        // If it's a string, return it directly
+        resolved.asString()?.let { return it }
+        // If it's a small int (tag 0), look up in shared keys
+        if (resolved.tag == FleeceValue.TAG_SHORT_INT && sharedKeys.isNotEmpty()) {
+            val index = resolved.asInt() ?: return null
+            return sharedKeys.getOrNull(index)
+        }
+        return null
+    }
+
+    /**
+     * Returns all key names in this dict, or empty list if keys cannot be decoded.
+     */
+    fun keys(): List<String> {
+        val result = mutableListOf<String>()
+        val headerOffset = value.offset
+        for (i in 0 until count) {
+            val keySlotOffset = headerOffset + 2 + i * 2 * slotWidth
+            if (keySlotOffset + slotWidth > value.data.size) break
+            val keySlotValue = FleeceValue(value.data, keySlotOffset)
+            resolveKeyName(keySlotValue)?.let { result.add(it) }
+        }
+        return result
+    }
+
     fun get(key: String): FleeceValue? {
         val headerOffset = value.offset
         for (i in 0 until count) {
@@ -57,14 +92,9 @@ class FleeceDict(val value: FleeceValue) {
             }
 
             val keySlotValue = FleeceValue(value.data, keySlotOffset)
-            val resolvedKey = if (keySlotValue.isPointer) {
-                keySlotValue.deref(wide = isWide) ?: continue
-            } else {
-                keySlotValue
-            }
+            val resolvedKeyName = resolveKeyName(keySlotValue)
 
-            // Check if the key matches
-            if (resolvedKey.asString() == key) {
+            if (resolvedKeyName == key) {
                 val valueSlotValue = FleeceValue(value.data, valueSlotOffset)
                 return valueSlotValue
             }

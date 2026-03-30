@@ -5,6 +5,7 @@ package dev.aragonite.powersearch.ui
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -88,7 +89,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     )
                     Text(
                         text = "${progress.phase}: ${progress.current}/${progress.total}",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 } else {
                     LinearProgressIndicator(
@@ -96,6 +97,10 @@ fun SearchScreen(viewModel: SearchViewModel) {
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                             .testTag("LinearProgressIndicator")
+                    )
+                    Text(
+                        text = progress?.phase ?: "Starting\u2026",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -179,16 +184,15 @@ private fun EmptyState(message: String) {
  * The intent includes documentId, parentUniqueId, and a jump_from_document_path identifier.
  */
 fun buildNoteIntent(shape: IndexedShape): Intent {
+    // ScribbleActivity reads an OpenNoteBean as JSON from the "OPEN_NOTE_BEAN" string extra.
+    // Discovered via JADX decompilation of knote2-release.apk (ScribbleActivity line 158).
+    val openNoteJson = """{"documentId":"${shape.documentId}","parentUniqueId":"${shape.parentUniqueId}","title":"${shape.noteTitle.replace("\"", "\\\"")}"}"""
     return Intent().apply {
         component = ComponentName(
             "com.onyx.android.note",
             "com.onyx.android.note.note.ui.ScribbleActivity"
         )
-        putExtra("documentId", shape.documentId)
-        putExtra("parentUniqueId", shape.parentUniqueId)
-        // jump_from_document_path is used by ScribbleActivity to identify the calling app.
-        // It is not a real filesystem path — it's an identifier string. Using the app package name.
-        putExtra("jump_from_document_path", "dev.aragonite.powersearch")
+        putExtra("OPEN_NOTE_BEAN", openNoteJson)
     }
 }
 

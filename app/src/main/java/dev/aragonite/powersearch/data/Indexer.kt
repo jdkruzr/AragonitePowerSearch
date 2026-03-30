@@ -3,8 +3,12 @@ package dev.aragonite.powersearch.data
 // pattern: Imperative Shell
 
 import android.os.Environment
+import android.util.Log
+import dev.aragonite.hwr.HWRStroke
 import dev.aragonite.powersearch.data.db.IndexedShape
 import java.io.File
+
+private const val TAG = "Indexer"
 
 data class IndexProgress(
     val phase: String,
@@ -41,27 +45,35 @@ open class Indexer(
         // Step 1: Scan point files
         onProgress(IndexProgress("Scanning files", 0, 0))
         val pointDir = File(ksyncRoot, "point")
-        if (!pointDir.exists()) return IndexResult(0, 0, 0, "No point directory found")
+        if (!pointDir.exists()) {
+            Log.w(TAG, "Point directory does not exist: ${pointDir.absolutePath}")
+            return IndexResult(0, 0, 0, "No point directory found at ${pointDir.absolutePath}")
+        }
 
         val currentFiles = mutableMapOf<String, Pair<Long, Long>>()
         pointDir.walkTopDown().filter { it.isFile }.forEach { file ->
             currentFiles[file.absolutePath] = Pair(file.lastModified(), file.length())
         }
+        Log.i(TAG, "Found ${currentFiles.size} point files on filesystem")
 
         // Step 2: Compute diff
         onProgress(IndexProgress("Computing diff", 0, 0))
         val diff = index.computeDiff(currentFiles)
         val filesToProcess = diff.newFiles + diff.modifiedFiles
         val total = filesToProcess.size
+        Log.i(TAG, "Diff: ${diff.newFiles.size} new, ${diff.modifiedFiles.size} modified, ${diff.deletedPaths.size} deleted")
 
         // Step 3: Bind HWR service (AC4.6: graceful handling if unavailable)
         val hwrAvailable = hwr.bind()
+        Log.i(TAG, "HWR service available: $hwrAvailable")
         try {
             // Step 4: Discover user ID and cache note metadata
             val userId = noteMetadata.discoverUserId()
+            Log.i(TAG, "User ID: $userId")
             val noteMetadataMap: Map<String, NoteMetadata> = if (userId != null) {
                 noteMetadata.getNoteMetadata(userId).associateBy { it.documentId }
             } else emptyMap()
+            Log.i(TAG, "Loaded ${noteMetadataMap.size} note metadata entries")
 
             // Cache handwriting shapes per document to avoid repeated DB reads
             val handwritingShapeCache = mutableMapOf<String, Set<String>>()
@@ -78,6 +90,7 @@ open class Indexer(
                     processPointFile(pointFile, userId, hwrAvailable, noteMetadataMap, handwritingShapeCache)
                     processed++
                 } catch (e: Exception) {
+                    Log.e(TAG, "Failed to process ${pointFile.name}: ${e.message}", e)
                     failed++
                 }
             }
@@ -93,6 +106,7 @@ open class Indexer(
         }
 
         val error = if (!hwrAvailable) "HWR service unavailable — shapes indexed without recognition text" else null
+        Log.i(TAG, "Reindex complete: processed=$processed, failed=$failed, deleted=$deleted, error=$error")
         return IndexResult(processed, failed, deleted, error)
     }
 
@@ -123,6 +137,7 @@ open class Indexer(
 
         // Read xref to get shapes in this file
         val xref = PointFileParser.readXref(pointFile)
+        Log.d(TAG, "File $documentId/$pageId: ${xref.size} xref entries")
 
         // Get handwriting shape filter from cache (per-document, loaded once)
         val handwritingShapeIds: Set<String>? = if (userId != null) {
@@ -132,35 +147,49 @@ open class Indexer(
                     .toSet()
             }
         } else null
+        Log.d(TAG, "Handwriting filter for $documentId: ${handwritingShapeIds?.size ?: "null (no userId)"} shapes")
 
+        // Collect all handwriting strokes for this page (batch for HWR)
+        val allStrokes = mutableListOf<HWRStroke>()
+        var filtered = 0
         for (entry in xref) {
-            // Filter to handwriting shapes if we have metadata
-            if (handwritingShapeIds != null && entry.shapeUuid !in handwritingShapeIds) continue
-
+            if (handwritingShapeIds != null && entry.shapeUuid !in handwritingShapeIds) {
+                filtered++
+                continue
+            }
             val stroke = strokeData.readStrokesForShape(pointFile, entry) ?: continue
-
-            // Recognize text (skip if HWR unavailable — AC2.3, AC4.6)
-            val recognizedText = if (hwrAvailable) {
-                try {
-                    hwr.recognizeStrokes(listOf(stroke), viewWidth, viewHeight) ?: ""
-                } catch (e: Exception) {
-                    "" // AC2.3: HWR failure doesn't block other shapes
-                }
-            } else ""
-
-            val shape = IndexedShape(
-                shapeId = entry.shapeUuid,
-                documentId = documentId,
-                pageId = pageId,
-                parentUniqueId = parentUniqueId,
-                noteTitle = noteTitle,
-                recognizedText = recognizedText,
-                pointFilePath = pointFile.absolutePath,
-                pointFileModified = pointFile.lastModified(),
-                pointFileSize = pointFile.length(),
-                indexedAt = System.currentTimeMillis()
-            )
-            index.upsertShape(shape)
+            allStrokes.add(stroke)
         }
+
+        if (allStrokes.isEmpty()) {
+            Log.d(TAG, "File $documentId/$pageId: 0 strokes (${xref.size} xref, $filtered filtered)")
+            return
+        }
+
+        // One HWR call per page with all strokes batched
+        val recognizedText = if (hwrAvailable) {
+            try {
+                hwr.recognizeStrokes(allStrokes, viewWidth, viewHeight) ?: ""
+            } catch (e: Exception) {
+                Log.w(TAG, "HWR failed for $documentId/$pageId: ${e.message}")
+                ""
+            }
+        } else ""
+
+        // Store one IndexedShape per page (keyed by pointFilePath)
+        val shape = IndexedShape(
+            shapeId = "${documentId}_${pageId}_${pointFile.name}",
+            documentId = documentId,
+            pageId = pageId,
+            parentUniqueId = parentUniqueId,
+            noteTitle = noteTitle,
+            recognizedText = recognizedText,
+            pointFilePath = pointFile.absolutePath,
+            pointFileModified = pointFile.lastModified(),
+            pointFileSize = pointFile.length(),
+            indexedAt = System.currentTimeMillis()
+        )
+        index.upsertShape(shape)
+        Log.d(TAG, "File $documentId/$pageId: ${allStrokes.size} strokes → '${recognizedText.take(60)}'")
     }
 }

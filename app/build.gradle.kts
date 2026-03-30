@@ -69,4 +69,6 @@ dependencies {
     // Android instrumented tests
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("org.jetbrains.kotlin:kotlin-test:1.9.23")
+    androidTestImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.23")
 }

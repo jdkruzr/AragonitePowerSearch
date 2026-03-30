@@ -2,12 +2,14 @@ package dev.aragonite.powersearch.ui
 
 // pattern: Imperative Shell
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.aragonite.powersearch.data.IndexProgress
 import dev.aragonite.powersearch.data.IndexRepository
-import dev.aragonite.powersearch.data.Indexer
 import dev.aragonite.powersearch.data.db.IndexedShape
+import dev.aragonite.powersearch.service.IndexingService
+import dev.aragonite.powersearch.service.IndexingState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -25,6 +27,7 @@ import kotlinx.coroutines.withContext
 data class SearchUiState(
     val results: List<IndexedShape> = emptyList(),
     val isIndexing: Boolean = false,
+    val isPaused: Boolean = false,
     val indexProgress: IndexProgress? = null,
     val indexedShapeCount: Int = 0,
     val error: String? = null
@@ -32,7 +35,7 @@ data class SearchUiState(
 
 class SearchViewModel(
     private val indexRepository: IndexRepository,
-    private val indexer: Indexer
+    private val context: Context
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -49,7 +52,6 @@ class SearchViewModel(
                 try {
                     emit(indexRepository.search(q))
                 } catch (e: Exception) {
-                    // Return empty list on search query errors (e.g., malformed FTS syntax)
                     emit(emptyList())
                 }
             }
@@ -61,10 +63,25 @@ class SearchViewModel(
             val count = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() }
             _uiState.value = _uiState.value.copy(indexedShapeCount = count)
         }
-        // Collect search results into UI state
         viewModelScope.launch {
             searchResults.collect { results ->
                 _uiState.value = _uiState.value.copy(results = results)
+            }
+        }
+        // Observe the IndexingService state
+        viewModelScope.launch {
+            IndexingService.state.collect { serviceState ->
+                // Refresh the indexed count from DB on every state change
+                val count = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() }
+                _uiState.value = _uiState.value.copy(
+                    isIndexing = serviceState.isRunning,
+                    isPaused = serviceState.isPaused,
+                    indexProgress = if (serviceState.isRunning) {
+                        IndexProgress(serviceState.phase, serviceState.current, serviceState.total)
+                    } else null,
+                    error = serviceState.error,
+                    indexedShapeCount = count
+                )
             }
         }
     }
@@ -73,29 +90,19 @@ class SearchViewModel(
         _query.value = newQuery
     }
 
-    fun reindex() {
-        if (_uiState.value.isIndexing) return
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isIndexing = true, error = null)
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    indexer.reindex { progress ->
-                        _uiState.value = _uiState.value.copy(indexProgress = progress)
-                    }
-                }
-                _uiState.value = _uiState.value.copy(
-                    isIndexing = false,
-                    indexProgress = null,
-                    indexedShapeCount = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() },
-                    error = result.error
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isIndexing = false,
-                    indexProgress = null,
-                    error = e.message ?: "Indexing failed"
-                )
-            }
-        }
+    fun startIndexing() {
+        IndexingService.start(context)
+    }
+
+    fun pauseIndexing() {
+        IndexingService.pause(context)
+    }
+
+    fun resumeIndexing() {
+        IndexingService.resume(context)
+    }
+
+    fun clearAndReindex() {
+        IndexingService.clearAndReindex(context)
     }
 }

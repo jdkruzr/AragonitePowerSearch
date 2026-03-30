@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -51,7 +52,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
             OutlinedTextField(
                 value = query,
                 onValueChange = viewModel::onQueryChange,
-                label = { Text("Search handwriting") },
+                label = { Text("Search Handwriting") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -64,19 +65,40 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val progress = uiState.indexProgress
                 Text(
-                    text = "${uiState.indexedShapeCount} shapes indexed",
-                    style = MaterialTheme.typography.bodySmall
+                    text = if (uiState.isIndexing && progress != null && progress.total > 0) {
+                        "${uiState.indexedShapeCount} of ${progress.total} pages indexed"
+                    } else {
+                        "${uiState.indexedShapeCount} pages indexed"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
                 )
-                Button(
-                    onClick = viewModel::reindex,
-                    enabled = !uiState.isIndexing
-                ) {
-                    Text(if (uiState.isIndexing) "Indexing..." else "Reindex")
+                when {
+                    uiState.isIndexing -> {
+                        OutlinedButton(onClick = viewModel::pauseIndexing) {
+                            Text("Pause")
+                        }
+                    }
+                    uiState.isPaused -> {
+                        Button(onClick = viewModel::resumeIndexing) {
+                            Text("Resume Indexing")
+                        }
+                    }
+                    else -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = viewModel::startIndexing) {
+                                Text("Update Index")
+                            }
+                            OutlinedButton(onClick = viewModel::clearAndReindex) {
+                                Text("Rebuild from Scratch")
+                            }
+                        }
+                    }
                 }
             }
 
-            // Progress indicator
+            // Progress bar — always visible. Animated when indexing, static when idle.
             if (uiState.isIndexing) {
                 val progress = uiState.indexProgress
                 if (progress != null && progress.total > 0) {
@@ -101,6 +123,22 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     Text(
                         text = progress?.phase ?: "Starting\u2026",
                         style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            } else {
+                // Static bar when not indexing — visual anchor that "something lives here"
+                LinearProgressIndicator(
+                    progress = { 1f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .testTag("LinearProgressIndicator")
+                )
+                if (uiState.isPaused) {
+                    Text(
+                        text = "Indexing paused. You can close the app and resume later.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
             }
@@ -149,18 +187,19 @@ private fun SearchResultCard(shape: IndexedShape, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 6.dp)
             .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = shape.noteTitle.ifBlank { "Untitled Note" },
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleMedium
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = shape.recognizedText,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 4
             )
         }
     }

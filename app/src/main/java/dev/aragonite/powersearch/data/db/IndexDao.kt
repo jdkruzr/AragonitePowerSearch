@@ -31,6 +31,9 @@ interface IndexDao {
 
     @Query("SELECT COUNT(*) FROM indexed_shapes")
     suspend fun getIndexedShapeCount(): Int
+
+    @Query("DELETE FROM indexed_shapes")
+    suspend fun clearAll()
 }
 
 data class IndexedFileInfo(

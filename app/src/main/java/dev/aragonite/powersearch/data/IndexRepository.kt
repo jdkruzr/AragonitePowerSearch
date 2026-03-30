@@ -41,11 +41,18 @@ class IndexRepository(private val dao: IndexDao) {
 
     suspend fun search(query: String): List<IndexedShape> {
         if (query.isBlank()) return emptyList()
-        // Escape FTS4 special characters to prevent query syntax errors
-        // FTS4 operators: * " ( ) - etc. Safest approach: escape double quotes by doubling them
-        val sanitizedQuery = query.replace("\"", "\"\"")
+        // Sanitize and add prefix matching for search-as-you-type.
+        // Each word gets a * suffix so "hammer" matches "hammerspace".
+        val sanitizedQuery = query.trim()
+            .replace("\"", "\"\"")
+            .split("\\s+".toRegex())
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { "$it*" }
+        if (sanitizedQuery.isBlank()) return emptyList()
         return dao.search(sanitizedQuery)
     }
 
     suspend fun getIndexedShapeCount(): Int = dao.getIndexedShapeCount()
+
+    suspend fun clearIndex() = dao.clearAll()
 }

@@ -177,6 +177,44 @@ Shipping the SQLite file between devices is simpler but fragile. Schema changes 
 
 Running recognition in the cloud during sync would eliminate all device-side cost. But it requires cloud compute infrastructure, adds latency to sync, and raises privacy concerns for handwritten personal notes. On-device HWR with synced results gives the same "recognize once" benefit without the privacy tradeoff.
 
+## The Missing Line
+
+The infrastructure for persistent handwriting search already exists in the BOOX firmware. It is nearly complete. Through reverse engineering of `knote2-release.apk`, we found:
+
+1. **Every shape record in Couchbase has a `text` field** (shared key index 37 in `kv_info`). It is always empty.
+
+2. **The "auto handwriting recognition in the background" feature** (`HWRecognizeInBackgroundAction`) runs MyScript iink, produces recognized text shapes, and calls `savePage()` to persist them.
+
+3. **`savePage()` writes shape records to Couchbase** via `NewShapeDataProvider.saveShapeList()`. The Couchbase sync layer then replicates these records to the cloud and other devices.
+
+4. **But `ShapeFactory.newShapeModelFromShape()` does not map the recognized text to the `text` field.** The HWR output is saved to the protobuf shape snapshots (`.ksync/document/{id}/shape/*.zip`) but the Couchbase record's `text` field is written as an empty string.
+
+The entire pipeline — recognition, persistence, sync, and a database field waiting to hold the result — is built. The recognized text is produced, the `text` field exists, the save path runs, and the sync would carry it to every device. The text just isn't copied into the field before the record is written.
+
+This is the gap:
+
+```
+Shape (has recognized text)
+    ↓
+ShapeFactory.newShapeModelFromShape(shape)
+    ↓
+NewShapeModel (text field = "")  ← recognized text not mapped
+    ↓
+NewShapeDataProvider.saveShapeList()
+    ↓
+Couchbase kv_default (text = "")
+    ↓
+Couchbase Sync → other devices (text = "")
+```
+
+Fixing this is a one-line change in the shape-to-model mapping. Once the `text` field is populated:
+
+- **Cross-note search becomes a SQL query** — `SELECT * FROM kv_default WHERE body MATCH 'query'` across all per-note databases, or a single full-text-search index built from the synced `text` fields.
+- **Multi-device sync carries recognition results for free** — recognize on one device, search on all of them.
+- **The "auto background recognition" feature becomes useful beyond the current note** — right now it runs, produces text, and then effectively throws it away when the note is closed.
+
+We confirmed this gap by examining the live Couchbase databases on a BOOX Tab Ultra C Pro running firmware 4.1.1. All 1,068 shape records in a test note had `text = ""` despite having run full-page HWR through the Notes app.
+
 ## Summary
 
 Handwriting search should be instant. The recognition work needs to happen once per page, not once per query. A persistent index with power-aware background processing turns handwritten notes from write-only archives into a searchable knowledge base — which is the entire reason users choose handwriting on an e-ink tablet over typing on a laptop.

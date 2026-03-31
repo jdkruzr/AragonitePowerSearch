@@ -2,6 +2,7 @@ package dev.aragonite.powersearch.data
 
 // pattern: Imperative Shell
 
+import androidx.sqlite.db.SimpleSQLiteQuery
 import dev.aragonite.powersearch.data.db.IndexDao
 import dev.aragonite.powersearch.data.db.IndexedShape
 import java.io.File
@@ -55,4 +56,8 @@ class IndexRepository(private val dao: IndexDao) {
     suspend fun getIndexedShapeCount(): Int = dao.getIndexedShapeCount()
 
     suspend fun clearIndex() = dao.clearAll()
+
+    fun checkpoint() {
+        dao.rawQuery(SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)"))
+    }
 }

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.RawQuery
 
 @Dao
 interface IndexDao {
@@ -26,6 +27,7 @@ interface IndexDao {
         SELECT s.* FROM indexed_shapes s
         JOIN indexed_shapes_fts fts ON s.rowid = fts.rowid
         WHERE indexed_shapes_fts MATCH :query
+        AND length(s.recognizedText) > 0
     """)
     suspend fun search(query: String): List<IndexedShape>
 
@@ -34,6 +36,9 @@ interface IndexDao {
 
     @Query("DELETE FROM indexed_shapes")
     suspend fun clearAll()
+
+    @RawQuery
+    fun rawQuery(query: androidx.sqlite.db.SupportSQLiteQuery): Int
 }
 
 data class IndexedFileInfo(

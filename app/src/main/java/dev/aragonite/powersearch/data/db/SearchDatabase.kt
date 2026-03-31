@@ -24,5 +24,12 @@ abstract class SearchDatabase : RoomDatabase() {
                 ).build().also { INSTANCE = it }
             }
         }
+
+        fun close() {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
+            }
+        }
     }
 }

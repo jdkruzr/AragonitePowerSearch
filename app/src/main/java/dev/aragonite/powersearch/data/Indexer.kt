@@ -64,7 +64,7 @@ open class Indexer(
         Log.i(TAG, "Diff: ${diff.newFiles.size} new, ${diff.modifiedFiles.size} modified, ${diff.deletedPaths.size} deleted")
 
         // Step 3: Bind HWR service (AC4.6: graceful handling if unavailable)
-        val hwrAvailable = hwr.bind()
+        var hwrAvailable = hwr.bind()
         Log.i(TAG, "HWR service available: $hwrAvailable")
         try {
             // Step 4: Discover user ID and cache note metadata
@@ -80,6 +80,8 @@ open class Indexer(
 
             // Step 5: Process new/modified files
             val modifiedSet = diff.modifiedFiles.toSet()
+            var consecutiveEmpty = 0
+            val MAX_CONSECUTIVE_EMPTY = 20
             for ((i, pointFile) in filesToProcess.withIndex()) {
                 onProgress(IndexProgress("Indexing", i + 1, total))
                 try {
@@ -87,8 +89,22 @@ open class Indexer(
                     if (pointFile in modifiedSet) {
                         index.deleteByPointFile(pointFile.absolutePath)
                     }
-                    processPointFile(pointFile, userId, hwrAvailable, noteMetadataMap, handwritingShapeCache)
+                    val gotText = processPointFile(pointFile, userId, hwrAvailable, noteMetadataMap, handwritingShapeCache)
                     processed++
+
+                    // Track consecutive empty HWR results to detect stale service
+                    if (gotText) {
+                        consecutiveEmpty = 0
+                    } else if (hwrAvailable) {
+                        consecutiveEmpty++
+                        if (consecutiveEmpty >= MAX_CONSECUTIVE_EMPTY) {
+                            Log.w(TAG, "$MAX_CONSECUTIVE_EMPTY consecutive empty HWR results — rebinding service")
+                            hwr.unbind()
+                            hwrAvailable = hwr.bind()
+                            Log.i(TAG, "HWR rebind result: $hwrAvailable")
+                            consecutiveEmpty = 0
+                        }
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to process ${pointFile.name}: ${e.message}", e)
                     failed++
@@ -110,18 +126,19 @@ open class Indexer(
         return IndexResult(processed, failed, deleted, error)
     }
 
+    /** Returns true if HWR produced non-empty text for this page. */
     private suspend fun processPointFile(
         pointFile: File,
         userId: String?,
         hwrAvailable: Boolean,
         noteMetadataMap: Map<String, NoteMetadata>,
         handwritingShapeCache: MutableMap<String, Set<String>>
-    ) {
+    ): Boolean {
         // Extract documentId and pageId from path:
         // /sdcard/.ksync/point/{documentId}/{pageId}/{revisionId}
         val parts = pointFile.absolutePath.split("/")
         val pointIdx = parts.indexOf("point")
-        if (pointIdx < 0 || pointIdx + 3 >= parts.size) return
+        if (pointIdx < 0 || pointIdx + 3 >= parts.size) return false
         val documentId = parts[pointIdx + 1]
         val pageId = parts[pointIdx + 2]
 
@@ -140,14 +157,17 @@ open class Indexer(
         Log.d(TAG, "File $documentId/$pageId: ${xref.size} xref entries")
 
         // Get handwriting shape filter from cache (per-document, loaded once)
+        // null = no filter (skip filtering when no per-note DB exists)
+        // non-empty set = only allow these shape UUIDs
         val handwritingShapeIds: Set<String>? = if (userId != null) {
-            handwritingShapeCache.getOrPut(documentId) {
+            val cached = handwritingShapeCache.getOrPut(documentId) {
                 noteMetadata.getHandwritingShapes(userId, documentId)
                     .map { it.uniqueId }
                     .toSet()
             }
+            cached.ifEmpty { null } // Empty = no per-note DB, don't filter
         } else null
-        Log.d(TAG, "Handwriting filter for $documentId: ${handwritingShapeIds?.size ?: "null (no userId)"} shapes")
+        Log.d(TAG, "Handwriting filter for $documentId: ${handwritingShapeIds?.size ?: "disabled (no metadata)"} shapes")
 
         // Collect all handwriting strokes for this page (batch for HWR)
         val allStrokes = mutableListOf<HWRStroke>()
@@ -163,7 +183,7 @@ open class Indexer(
 
         if (allStrokes.isEmpty()) {
             Log.d(TAG, "File $documentId/$pageId: 0 strokes (${xref.size} xref, $filtered filtered)")
-            return
+            return false
         }
 
         // One HWR call per page with all strokes batched
@@ -191,5 +211,6 @@ open class Indexer(
         )
         index.upsertShape(shape)
         Log.d(TAG, "File $documentId/$pageId: ${allStrokes.size} strokes → '${recognizedText.take(60)}'")
+        return recognizedText.isNotEmpty()
     }
 }

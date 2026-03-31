@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -49,13 +53,24 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 .padding(16.dp)
         ) {
             // Search input
-            OutlinedTextField(
-                value = query,
-                onValueChange = viewModel::onQueryChange,
-                label = { Text("Search Handwriting") },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = viewModel::onQueryChange,
+                    label = { Text("Search Handwriting") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { viewModel.executeSearch() })
+                )
+                Button(onClick = viewModel::executeSearch) {
+                    Text("Search")
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -140,6 +155,21 @@ fun SearchScreen(viewModel: SearchViewModel) {
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
+                }
+            }
+
+            // Export/Import controls
+            if (!uiState.isIndexing) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = viewModel::exportIndex) {
+                        Text("Export Index", style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(onClick = viewModel::importIndex) {
+                        Text("Import Index", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
 

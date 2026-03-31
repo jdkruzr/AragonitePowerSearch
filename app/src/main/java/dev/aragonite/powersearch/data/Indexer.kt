@@ -82,17 +82,45 @@ open class Indexer(
             val modifiedSet = diff.modifiedFiles.toSet()
             var consecutiveEmpty = 0
             val MAX_CONSECUTIVE_EMPTY = 20
+            // Adaptive throttle: increase delay when HWR drops results
+            var throttleMs = 0L
+            var recentTotal = 0
+            var recentHits = 0
+            val WINDOW_SIZE = 20
             for ((i, pointFile) in filesToProcess.withIndex()) {
                 onProgress(IndexProgress("Indexing", i + 1, total))
                 try {
-                    // For modified files, remove old shapes before re-indexing to prevent stale entries
                     if (pointFile in modifiedSet) {
                         index.deleteByPointFile(pointFile.absolutePath)
                     }
                     val gotText = processPointFile(pointFile, userId, hwrAvailable, noteMetadataMap, handwritingShapeCache)
                     processed++
 
-                    // Track consecutive empty HWR results to detect stale service
+                    // Adaptive throttle: track rolling hit rate
+                    recentTotal++
+                    if (gotText) recentHits++
+                    if (recentTotal >= WINDOW_SIZE) {
+                        val hitRate = recentHits.toFloat() / recentTotal
+                        val oldThrottle = throttleMs
+                        throttleMs = when {
+                            hitRate < 0.5 -> 1000L   // < 50% — heavy throttle
+                            hitRate < 0.7 -> 500L    // < 70% — moderate throttle
+                            hitRate < 0.85 -> 200L   // < 85% — light throttle
+                            hitRate > 0.95 && throttleMs > 0 -> (throttleMs - 100).coerceAtLeast(0) // > 95% — ease off
+                            else -> throttleMs
+                        }
+                        if (throttleMs != oldThrottle) {
+                            Log.i(TAG, "Adaptive throttle: hit rate ${(hitRate * 100).toInt()}% over last $WINDOW_SIZE pages → ${throttleMs}ms delay")
+                        }
+                        recentTotal = 0
+                        recentHits = 0
+                    }
+
+                    if (throttleMs > 0 && hwrAvailable) {
+                        kotlinx.coroutines.delay(throttleMs)
+                    }
+
+                    // Track consecutive empty for rebind
                     if (gotText) {
                         consecutiveEmpty = 0
                     } else if (hwrAvailable) {
@@ -103,6 +131,8 @@ open class Indexer(
                             hwrAvailable = hwr.bind()
                             Log.i(TAG, "HWR rebind result: $hwrAvailable")
                             consecutiveEmpty = 0
+                            throttleMs = 500L // Start with moderate throttle after rebind
+                            Log.i(TAG, "Post-rebind throttle: ${throttleMs}ms")
                         }
                     }
                 } catch (e: Exception) {
@@ -111,7 +141,15 @@ open class Indexer(
                 }
             }
 
-            // Step 6: Remove deleted files
+            // Step 6: Clean up empty pages so they get re-processed on next run
+            if (hwrAvailable) {
+                val emptyCount = index.deleteEmptyPages()
+                if (emptyCount > 0) {
+                    Log.i(TAG, "Removed $emptyCount pages with empty recognizedText for re-processing")
+                }
+            }
+
+            // Step 7: Remove deleted files
             for (path in diff.deletedPaths) {
                 index.deleteByPointFile(path)
                 deleted++
@@ -170,15 +208,24 @@ open class Indexer(
         Log.d(TAG, "Handwriting filter for $documentId: ${handwritingShapeIds?.size ?: "disabled (no metadata)"} shapes")
 
         // Collect all handwriting strokes for this page (batch for HWR)
+        // Filter out single-point strokes: they cause MyScript to hang (DOWN with no UP)
         val allStrokes = mutableListOf<HWRStroke>()
         var filtered = 0
+        var singlePointDropped = 0
         for (entry in xref) {
             if (handwritingShapeIds != null && entry.shapeUuid !in handwritingShapeIds) {
                 filtered++
                 continue
             }
             val stroke = strokeData.readStrokesForShape(pointFile, entry) ?: continue
+            if (stroke.points.size < 2) {
+                singlePointDropped++
+                continue
+            }
             allStrokes.add(stroke)
+        }
+        if (singlePointDropped > 0) {
+            Log.d(TAG, "Dropped $singlePointDropped single-point strokes (MyScript poison)")
         }
 
         if (allStrokes.isEmpty()) {
@@ -187,14 +234,22 @@ open class Indexer(
         }
 
         // One HWR call per page with all strokes batched
-        val recognizedText = if (hwrAvailable) {
-            try {
-                hwr.recognizeStrokes(allStrokes, viewWidth, viewHeight) ?: ""
-            } catch (e: Exception) {
-                Log.w(TAG, "HWR failed for $documentId/$pageId: ${e.message}")
-                ""
+        // Retry once if HWR returns empty (service may need time to stabilize)
+        var recognizedText = ""
+        if (hwrAvailable) {
+            for (attempt in 1..2) {
+                try {
+                    recognizedText = hwr.recognizeStrokes(allStrokes, viewWidth, viewHeight) ?: ""
+                } catch (e: Exception) {
+                    Log.w(TAG, "HWR failed for $documentId/$pageId (attempt $attempt): ${e.message}")
+                }
+                if (recognizedText.isNotEmpty()) break
+                if (attempt == 1) {
+                    Log.d(TAG, "HWR returned empty for $documentId/$pageId with ${allStrokes.size} strokes, retrying after delay")
+                    kotlinx.coroutines.delay(500)
+                }
             }
-        } else ""
+        }
 
         // Store one IndexedShape per page (keyed by pointFilePath)
         val shape = IndexedShape(

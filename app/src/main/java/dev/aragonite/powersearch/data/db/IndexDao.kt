@@ -37,6 +37,9 @@ interface IndexDao {
     @Query("DELETE FROM indexed_shapes")
     suspend fun clearAll()
 
+    @Query("DELETE FROM indexed_shapes WHERE length(recognizedText) = 0")
+    suspend fun deleteEmptyPages(): Int
+
     @RawQuery
     fun rawQuery(query: androidx.sqlite.db.SupportSQLiteQuery): Int
 }

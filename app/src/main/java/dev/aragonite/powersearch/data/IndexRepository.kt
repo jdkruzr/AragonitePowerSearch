@@ -57,6 +57,8 @@ class IndexRepository(private val dao: IndexDao) {
 
     suspend fun clearIndex() = dao.clearAll()
 
+    suspend fun deleteEmptyPages(): Int = dao.deleteEmptyPages()
+
     fun checkpoint() {
         dao.rawQuery(SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)"))
     }

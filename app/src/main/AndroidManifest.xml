@@ -25,6 +25,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".debug.HWRTestActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AragonitePowerSearch" />
+
         <service
             android:name=".service.IndexingService"
             android:foregroundServiceType="dataSync"

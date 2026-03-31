@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Last verified: 2026-03-30
+Last verified: 2026-03-31
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -68,22 +68,23 @@ Package: `dev.aragonite.powersearch.data`
 
 - `NoteMetadataRepository` -- reads Couchbase/Fleece databases. Discovers userId, reads NOTE_TREE for titles, reads per-note DBs for shape metadata. Filters to `HandwritingShapeTypes.TYPES`.
 - `StrokeDataRepository` -- reads point files via `PointFileParser`, converts TinyPoints to `HWRStroke`/`HWRPoint`, reads page dimensions from protobuf JSON.
-- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data.
+- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data. `deleteEmptyPages()` removes pages with empty recognizedText so they get retried on next run. `checkpoint()` runs WAL checkpoint (used before export).
 - `HWRRepository` -- wraps `AragoniteHWR` static API. Bind/unbind lifecycle. Returns null if not bound. Class is `open` for test overrides.
-- `Indexer` -- orchestrates full reindex pipeline. Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text).
+- `Indexer` -- orchestrates full reindex pipeline. Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text). Includes HWR resilience: single-point stroke filter, retry on empty, adaptive throttle, service rebind after 20 consecutive empties, post-indexing empty-page cleanup.
 
 ### Database Schema
 
-Database: `power_search.db` (Room, version 1)
+Database: `power_search.db` (Room, version 1). `SearchDatabase.close()` static method allows closing for import/overwrite.
 
 - `indexed_shapes` table -- primary key `shapeId` (UUID). Columns: `documentId`, `pageId`, `parentUniqueId`, `noteTitle`, `recognizedText`, `pointFilePath`, `pointFileModified`, `pointFileSize`, `indexedAt`.
 - `indexed_shapes_fts` -- FTS4 content-sync table indexing `recognizedText` and `noteTitle`.
+- Search queries additionally filter `length(recognizedText) > 0` to exclude empty-text entries.
 
 ### UI Layer
 
 Package: `dev.aragonite.powersearch.ui`
 
-- `SearchViewModel` -- takes `IndexRepository` + `Context`. Delegates indexing to `IndexingService` (start/pause/resume/clearAndReindex). Observes `IndexingService.state` StateFlow for progress. Exposes `SearchUiState` (results, isIndexing, isPaused, progress, count, error). Query debounced at 300ms via Flow.
+- `SearchViewModel` -- takes `IndexRepository` + `Context`. Delegates indexing to `IndexingService` (start/pause/resume/clearAndReindex). Observes `IndexingService.state` StateFlow for progress. Exposes `SearchUiState` (results, isIndexing, isPaused, progress, count, error). Search is explicit via `executeSearch()` (no longer Flow-debounced). Also provides `exportIndex()` and `importIndex()` for database portability.
 - `SearchScreen` -- Compose UI with search field, result list, "Update Index" and "Rebuild from Scratch" buttons, animated/static progress bar, "X of Y pages indexed" label.
 - `SearchViewModelFactory` -- manual DI wiring. Creates `IndexRepository` only (indexing delegated to service).
 
@@ -93,6 +94,7 @@ Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivi
 
 ## Invariants
 
+- **Single-point strokes MUST be filtered before HWR.** Strokes with < 2 points (a DOWN event with no MOVE/UP) cause MyScript's KHwrService to hang indefinitely. The filter is in `Indexer.processPointFile()`. This is the most critical invariant for HWR reliability.
 - Indexer always unbinds HWR in a `finally` block, even on failure.
 - Modified files are deleted from index before re-indexing (prevents stale entries).
 - FTS4 table is content-sync with `indexed_shapes` -- Room manages sync automatically.
@@ -102,3 +104,7 @@ Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivi
 - `IndexingService.state` is a static `StateFlow` -- UI observes it without binding to the service.
 - "Rebuild from Scratch" cancels any running job, clears the index, then starts a fresh reindex.
 - Search queries are prefix-matched: each word gets a `*` suffix for search-as-you-type behavior.
+- HWR empty result triggers retry (once, after 500ms delay) before accepting empty text.
+- After 20 consecutive empty HWR results, the service is unbound and rebound (stale connection recovery).
+- Adaptive throttle inserts delays (200-1000ms) when HWR hit rate drops below 85%, eases off above 95%.
+- Post-indexing cleanup: pages with empty `recognizedText` are deleted so they get retried on next run.

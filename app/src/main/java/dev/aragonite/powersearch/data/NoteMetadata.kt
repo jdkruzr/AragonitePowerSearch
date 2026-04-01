@@ -3,7 +3,19 @@ package dev.aragonite.powersearch.data
 data class NoteMetadata(
     val documentId: String,       // key from kv_default table (note UUID)
     val title: String,            // from NOTE_TREE BLOB "title" field
-    val parentUniqueId: String    // from NOTE_TREE BLOB "parentUniqueId" field
+    val parentUniqueId: String,   // from NOTE_TREE BLOB "parentUniqueId" field
+    val folderName: String = ""   // resolved folder name (empty = unfiled/root)
+)
+
+/**
+ * Container for NOTE_TREE scan results: active notes with folder assignments,
+ * plus sets of deleted/inactive document IDs to exclude from indexing.
+ */
+data class NoteTreeInfo(
+    val notes: Map<String, NoteMetadata>,       // documentId -> metadata (active notes only)
+    val folders: Map<String, String>,            // folderUuid -> folderName (active folders only)
+    val deletedNoteIds: Set<String>,             // document IDs with status=0 (deleted notes)
+    val deletedFolderIds: Set<String>            // folder UUIDs with status=0 (deleted folders)
 )
 
 data class ShapeMetadata(

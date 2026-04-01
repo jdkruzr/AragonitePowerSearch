@@ -197,6 +197,201 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
         return Pair(titleIdx, parentIdx)
     }
 
+    /**
+     * Single-pass scan of NOTE_TREE that returns:
+     * - Active note metadata with folder assignments (by UUID substring match)
+     * - Deleted note IDs to exclude from indexing
+     * - Active and deleted folder info
+     *
+     * Uses byte-level folder UUID matching to avoid shared key ordering issues.
+     */
+    fun scanNoteTree(userId: String): NoteTreeInfo {
+        val dbPath = File(ksyncRoot, "couch/$userId-NOTE_TREE.cblite2/db.sqlite3")
+        if (!dbPath.exists()) return NoteTreeInfo(emptyMap(), emptyMap(), emptySet(), emptySet())
+
+        val db = try {
+            SQLiteDatabase.openDatabase(dbPath.path, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open NOTE_TREE for scan: ${e.message}")
+            return NoteTreeInfo(emptyMap(), emptyMap(), emptySet(), emptySet())
+        }
+
+        return try {
+            val sharedKeys = readSharedKeys(db)
+
+            // First pass: find folders (type=0) and collect all entries
+            data class RawEntry(val key: String, val body: ByteArray, val type: Int?, val status: Int?, val title: String?, val uid: String?)
+
+            val entries = mutableListOf<RawEntry>()
+            val cursor = db.rawQuery("SELECT key, body FROM kv_default", null)
+            cursor.use {
+                while (it.moveToNext()) {
+                    val key = it.getString(0)
+                    val body = it.getBlob(1) ?: continue
+                    val dict = FleeceDecoder.decodeAsDict(body, sharedKeys)
+
+                    // Extract type and status (works even with mismatched shared keys since these are small ints)
+                    val type = dict?.getInt("type")
+                    val status = dict?.getInt("status")
+                    val title = dict?.getString("title")
+                    val uid = dict?.getString("uniqueId")
+
+                    entries.add(RawEntry(key, body, type, status, title, uid))
+                }
+            }
+            Log.i(TAG, "scanNoteTree: ${entries.size} entries")
+
+            // Identify folders
+            // Folder names can't be trusted from getString("title") due to shared key issues.
+            // Instead, extract the folder name by finding the best candidate string in the BLOB:
+            // a short, non-UUID, non-keyword string that's likely the user-visible name.
+            val activeFolders = mutableMapOf<String, String>()   // uuid -> name
+            val deletedFolderIds = mutableSetOf<String>()
+            val knownKeywords = setOf("Local", "SCRIBBLE_NOTE", "DEFAULT", "GDEFAULT",
+                "TabUltraCPro", "TabMiniC", "NoteMax", "Palma", "Palma2Pro", "GoLumi",
+                "miniRequiredVersion", "richTextPageNameList")
+            for (e in entries) {
+                if (e.type == 0) {
+                    val folderUid = e.uid ?: e.key
+                    // Extract folder name from BLOB by scanning Fleece-encoded strings
+                    val folderName = e.title?.takeIf { it !in knownKeywords } ?: run {
+                        // Fallback: parse Fleece inline strings from the BLOB and find the best candidate
+                        val candidates = mutableListOf<String>()
+                        var pos = 0
+                        while (pos < e.body.size) {
+                            val b = e.body[pos].toInt() and 0xFF
+                            val tag = (b shr 4) and 0xF
+                            if (tag == 4) { // Fleece string
+                                val len = b and 0xF
+                                val strLen: Int
+                                val strStart: Int
+                                if (len == 15) {
+                                    strLen = e.body.getOrNull(pos + 1)?.toInt()?.and(0xFF) ?: break
+                                    strStart = pos + 2
+                                } else {
+                                    strLen = len
+                                    strStart = pos + 1
+                                }
+                                if (strStart + strLen <= e.body.size && strLen in 2..30) {
+                                    val s = e.body.decodeToString(strStart, strStart + strLen)
+                                    if (!s.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-.*")) &&
+                                        !s.matches(Regex("[0-9a-f]{20,}")) &&
+                                        !s.contains("NOTE_TREE") &&
+                                        s !in knownKeywords &&
+                                        !s.startsWith("66d7d5") &&
+                                        s.all { c -> c in ' '..'~' }) {
+                                        candidates.add(s)
+                                    }
+                                }
+                                pos = strStart + strLen
+                                if (pos % 2 != 0) pos++
+                            } else {
+                                pos += 2
+                            }
+                        }
+                        // Folder names are typically short human-readable strings
+                        // Filter out common non-name strings and pick the best
+                        candidates.filter { s ->
+                            s.length in 2..30 &&
+                            !s.contains("/") &&
+                            !s.contains(".") &&
+                            !s.contains("Version") &&
+                            !s.contains("Tab") &&
+                            !s.contains("Note") &&
+                            !s.startsWith("rich") &&
+                            !s.startsWith("mini") &&
+                            s !in knownKeywords
+                        }.firstOrNull()
+                    } ?: folderUid
+
+                    if (e.status == 1) {
+                        activeFolders[folderUid] = folderName
+                        Log.d(TAG, "Active folder: '$folderName' ($folderUid)")
+                    } else {
+                        deletedFolderIds.add(folderUid)
+                        Log.d(TAG, "Deleted folder: uid=$folderUid")
+                    }
+                }
+            }
+
+            // If title detection failed (shared key mismatch), retry
+            val allFolderUids = activeFolders.keys + deletedFolderIds
+            var notesWithTitle = entries.count { it.type == 1 && it.title != null }
+            var effectiveKeys = sharedKeys
+
+            if (notesWithTitle == 0 && entries.any { it.type == 1 }) {
+                Log.w(TAG, "No titles found — attempting key detection")
+                val detectedTitle = detectTitleKeyIndex(db)
+                if (detectedTitle != null) {
+                    val remapped = sharedKeys.toMutableList()
+                    while (remapped.size <= maxOf(detectedTitle.first, detectedTitle.second)) remapped.add("?${remapped.size}")
+                    remapped[detectedTitle.first] = "title"
+                    remapped[detectedTitle.second] = "parentUniqueId"
+                    effectiveKeys = remapped
+
+                    // Re-decode titles with remapped keys (notes AND folders)
+                    activeFolders.clear()
+                    deletedFolderIds.clear()
+                    for ((i, e) in entries.withIndex()) {
+                        val dict = FleeceDecoder.decodeAsDict(e.body, effectiveKeys)
+                        val title = dict?.getString("title")
+                        if (title != null) {
+                            entries[i] = e.copy(title = title)
+                        }
+                        // Rebuild folder maps with corrected titles
+                        if (e.type == 0) {
+                            val folderUid = e.uid ?: e.key
+                            val folderName = title ?: e.key
+                            if (e.status == 1) {
+                                activeFolders[folderUid] = folderName
+                            } else {
+                                deletedFolderIds.add(folderUid)
+                            }
+                        }
+                    }
+                    notesWithTitle = entries.count { it.type == 1 && it.title != null }
+                    Log.i(TAG, "After key detection: $notesWithTitle notes with titles, ${activeFolders.size} folders: $activeFolders")
+                }
+            }
+
+            // Build note metadata with folder assignments (by UUID substring match)
+            val notes = mutableMapOf<String, NoteMetadata>()
+            val deletedNoteIds = mutableSetOf<String>()
+
+            for (e in entries) {
+                if (e.type == 1) {
+                    if (e.status == 0) {
+                        deletedNoteIds.add(e.key)
+                        continue
+                    }
+                    val title = e.title ?: continue
+
+                    // Find folder by UUID substring match in BLOB bytes
+                    var folderName = ""
+                    val bodyStr = String(e.body, Charsets.US_ASCII)
+                    for ((fuid, fname) in activeFolders) {
+                        if (bodyStr.contains(fuid)) {
+                            folderName = fname
+                            break
+                        }
+                    }
+
+                    notes[e.key] = NoteMetadata(
+                        documentId = e.key,
+                        title = title,
+                        parentUniqueId = folderName,
+                        folderName = folderName
+                    )
+                }
+            }
+
+            Log.i(TAG, "scanNoteTree result: ${notes.size} active notes, ${activeFolders.size} folders, ${deletedNoteIds.size} deleted notes, ${deletedFolderIds.size} deleted folders")
+            NoteTreeInfo(notes, activeFolders, deletedNoteIds, deletedFolderIds)
+        } finally {
+            db.close()
+        }
+    }
+
     fun getHandwritingShapes(userId: String, documentId: String): List<ShapeMetadata> {
         val dbPath = File(ksyncRoot, "couch/$userId-$documentId.cblite2/db.sqlite3")
         if (!dbPath.exists()) return emptyList()

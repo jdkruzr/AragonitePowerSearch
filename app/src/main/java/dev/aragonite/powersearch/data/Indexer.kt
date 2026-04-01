@@ -67,13 +67,14 @@ open class Indexer(
         var hwrAvailable = hwr.bind()
         Log.i(TAG, "HWR service available: $hwrAvailable")
         try {
-            // Step 4: Discover user ID and cache note metadata
+            // Step 4: Discover user ID and scan NOTE_TREE for metadata + folders + deleted notes
             val userId = noteMetadata.discoverUserId()
             Log.i(TAG, "User ID: $userId")
-            val noteMetadataMap: Map<String, NoteMetadata> = if (userId != null) {
-                noteMetadata.getNoteMetadata(userId).associateBy { it.documentId }
-            } else emptyMap()
-            Log.i(TAG, "Loaded ${noteMetadataMap.size} note metadata entries")
+            val noteTreeInfo: NoteTreeInfo = if (userId != null) {
+                noteMetadata.scanNoteTree(userId)
+            } else NoteTreeInfo(emptyMap(), emptyMap(), emptySet(), emptySet())
+            val noteMetadataMap = noteTreeInfo.notes
+            Log.i(TAG, "Loaded ${noteMetadataMap.size} note metadata, ${noteTreeInfo.deletedNoteIds.size} deleted notes, ${noteTreeInfo.folders.size} folders")
 
             // Cache handwriting shapes per document to avoid repeated DB reads
             val handwritingShapeCache = mutableMapOf<String, Set<String>>()
@@ -87,9 +88,26 @@ open class Indexer(
             var recentTotal = 0
             var recentHits = 0
             val WINDOW_SIZE = 20
+            var skippedDeleted = 0
             for ((i, pointFile) in filesToProcess.withIndex()) {
                 onProgress(IndexProgress("Indexing", i + 1, total))
                 try {
+                    // Skip deleted notes — extract documentId from path
+                    val pathParts = pointFile.absolutePath.split("/")
+                    val ptIdx = pathParts.indexOf("point")
+                    if (ptIdx >= 0 && ptIdx + 1 < pathParts.size) {
+                        val docId = pathParts[ptIdx + 1]
+                        if (docId in noteTreeInfo.deletedNoteIds) {
+                            skippedDeleted++
+                            continue
+                        }
+                        // Skip files with no NOTE_TREE entry (reader annotations, orphans)
+                        if (noteMetadataMap.isNotEmpty() && docId !in noteMetadataMap) {
+                            skippedDeleted++
+                            continue
+                        }
+                    }
+
                     if (pointFile in modifiedSet) {
                         index.deleteByPointFile(pointFile.absolutePath)
                     }
@@ -141,13 +159,12 @@ open class Indexer(
                 }
             }
 
-            // Step 6: Clean up empty pages so they get re-processed on next run
-            if (hwrAvailable) {
-                val emptyCount = index.deleteEmptyPages()
-                if (emptyCount > 0) {
-                    Log.i(TAG, "Removed $emptyCount pages with empty recognizedText for re-processing")
-                }
+            if (skippedDeleted > 0) {
+                Log.i(TAG, "Skipped $skippedDeleted point files from deleted notes")
             }
+
+            // Note: empty pages (no handwriting strokes) are stored with empty recognizedText
+            // and filtered out in search queries. No cleanup needed — keeps diff stable.
 
             // Step 7: Refresh titles for any untitled pages
             onProgress(IndexProgress("Refreshing titles", 0, 0))
@@ -234,6 +251,21 @@ open class Indexer(
 
         if (allStrokes.isEmpty()) {
             Log.d(TAG, "File $documentId/$pageId: 0 strokes (${xref.size} xref, $filtered filtered)")
+            // Store with empty text so diff doesn't re-process this file every run.
+            // Search query filters these out via length(recognizedText) > 0.
+            val shape = IndexedShape(
+                shapeId = "${documentId}_${pageId}_${pointFile.name}",
+                documentId = documentId,
+                pageId = pageId,
+                parentUniqueId = note?.folderName ?: "",
+                noteTitle = noteTitle,
+                recognizedText = "",
+                pointFilePath = pointFile.absolutePath,
+                pointFileModified = pointFile.lastModified(),
+                pointFileSize = pointFile.length(),
+                indexedAt = System.currentTimeMillis()
+            )
+            index.upsertShape(shape)
             return false
         }
 
@@ -275,17 +307,34 @@ open class Indexer(
 
     private suspend fun refreshTitles(noteMetadataMap: Map<String, NoteMetadata>) {
         if (noteMetadataMap.isEmpty()) {
-            Log.w(TAG, "No metadata available — skipping title refresh")
+            Log.w(TAG, "No metadata available — skipping title/folder refresh")
             return
         }
+
+        // Refresh titles for untitled documents
         val untitled = index.getUntitledDocumentIds()
-        if (untitled.isEmpty()) return
-        var updated = 0
+        var titleUpdated = 0
         for (docId in untitled) {
             val note = noteMetadataMap[docId] ?: continue
-            index.updateTitlesForDocument(docId, note.title, note.parentUniqueId)
-            updated++
+            index.updateTitlesForDocument(docId, note.title, note.folderName)
+            titleUpdated++
         }
-        Log.i(TAG, "Refreshed titles for $updated / ${untitled.size} untitled documents")
+        if (titleUpdated > 0) {
+            Log.i(TAG, "Refreshed titles for $titleUpdated / ${untitled.size} untitled documents")
+        }
+
+        // Refresh folder names for documents with empty parentUniqueId
+        val unfoldered = index.getUnfolderedDocumentIds()
+        var folderUpdated = 0
+        for (docId in unfoldered) {
+            val note = noteMetadataMap[docId] ?: continue
+            if (note.folderName.isNotEmpty()) {
+                index.updateTitlesForDocument(docId, note.title, note.folderName)
+                folderUpdated++
+            }
+        }
+        if (folderUpdated > 0) {
+            Log.i(TAG, "Refreshed folders for $folderUpdated / ${unfoldered.size} unfoldered documents")
+        }
     }
 }

@@ -61,6 +61,8 @@ class IndexRepository(private val dao: IndexDao) {
 
     suspend fun getUntitledDocumentIds(): List<String> = dao.getUntitledDocumentIds()
 
+    suspend fun getUnfolderedDocumentIds(): List<String> = dao.getUnfolderedDocumentIds()
+
     suspend fun updateTitlesForDocument(documentId: String, title: String, parentUniqueId: String) =
         dao.updateTitlesForDocument(documentId, title, parentUniqueId)
 

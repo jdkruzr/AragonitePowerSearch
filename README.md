@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="powersearch.png" width="200" alt="PowerSearch logo" />
+  <img src="powersearch.png" width="400" alt="PowerSearch logo" />
 </p>
 
 # Aragonite PowerSearch
@@ -29,8 +29,8 @@ PowerSearch builds a persistent full-text search index of your handwriting. Each
 | Device | SoC | Pages/min | Full library (12K pages) |
 |--------|-----|-----------|--------------------------|
 | Note Max | Snapdragon 855 | ~84 | ~2.5 hours |
-| Palma 2 Pro | Snapdragon 665 | ~32 | ~6 hours |
-| Tab Lumi | Snapdragon 690 | ~39 | ~5 hours |
+| Palma 2 Pro | Snapdragon 750G | ~50 | ~4 hours |
+| Go 10.3 Gen 2 Lumi | Snapdragon 690 | ~39 | ~5.5 hours |
 
 Recognition hit rate: **100%** after single-point stroke filter fix.
 Index size: **~8MB** for 12,000 pages.

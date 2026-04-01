@@ -120,60 +120,77 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
      * (date patterns like "20250924 ..."). Returns pair of (titleIndex, parentUniqueIdIndex) or null.
      */
     private fun detectTitleKeyIndex(db: SQLiteDatabase): Pair<Int, Int>? {
-        val cursor = db.rawQuery("SELECT body FROM kv_default LIMIT 200", null)
-        // Track which key indices map to date-pattern strings
+        // Skip small sync records — real notes are typically > 300 bytes
+        val cursor = db.rawQuery("SELECT body FROM kv_default WHERE length(body) > 300 LIMIT 200", null)
         val titleCandidates = mutableMapOf<Int, Int>() // keyIndex -> count of date-pattern matches
 
         cursor.use {
             while (it.moveToNext()) {
                 val body = it.getBlob(0) ?: continue
-                val dict = FleeceDecoder.decodeAsDict(body, emptyList()) ?: continue
-                if (dict.count < 20) continue // Skip non-note entries
 
-                // Scan all key-value pairs looking for string values matching "20YYMMDD"
+                // Step 1: Find date-pattern Fleece strings anywhere in the BLOB
+                // by scanning for inline strings matching "20YYMMDD "
+                val dateStringOffsets = mutableSetOf<Int>()
+                var pos = 0
+                while (pos < body.size) {
+                    val b = body[pos].toInt() and 0xFF
+                    val tag = (b shr 4) and 0xF
+                    if (tag == 4) {
+                        val len = b and 0xF
+                        val strLen: Int
+                        val strStart: Int
+                        if (len == 15) {
+                            strLen = body.getOrNull(pos + 1)?.toInt()?.and(0xFF) ?: break
+                            strStart = pos + 2
+                        } else {
+                            strLen = len
+                            strStart = pos + 1
+                        }
+                        if (strLen >= 8 && strStart + strLen <= body.size) {
+                            val str = body.decodeToString(strStart, strStart + minOf(strLen, 20))
+                            if (str.matches(Regex("^20\\d{6}\\s.*"))) {
+                                dateStringOffsets.add(pos)
+                            }
+                        }
+                        pos = strStart + strLen
+                        if (pos % 2 != 0) pos++
+                    } else {
+                        pos += 2
+                    }
+                }
+                if (dateStringOffsets.isEmpty()) continue
+
+                // Step 2: Find the dict and check which key slot has a pointer/value
+                // pointing to one of the date-pattern string offsets
+                val dict = FleeceDecoder.decodeAsDict(body, emptyList()) ?: continue
+                if (dict.count < 10) continue
                 val headerOffset = dict.value.offset
                 val sw = dict.slotWidth
                 for (i in 0 until dict.count) {
                     val ko = headerOffset + 2 + i * 2 * sw
                     val vo = ko + sw
                     if (vo + sw > body.size) break
-
-                    // Check key: must be a small int (shared key index)
                     val kb = (body[ko].toInt() and 0xF0) shr 4
                     if (kb != 0) continue
                     val keyIdx = ((body[ko].toInt() and 0xFF) shl 8 or (body[ko + 1].toInt() and 0xFF)) and 0x0FFF
 
-                    // Check value: resolve pointer and check for date-pattern string
+                    // Resolve value to a target offset
                     val vb0 = body[vo].toInt() and 0xFF
-                    if (vb0 and 0x80 == 0) continue // not a pointer
-                    val target = if (dict.isWide) {
-                        val raw32 = ((body[vo].toInt() and 0xFF) shl 24) or
-                                ((body[vo+1].toInt() and 0xFF) shl 16) or
-                                ((body[vo+2].toInt() and 0xFF) shl 8) or
-                                (body[vo+3].toInt() and 0xFF)
-                        vo - ((raw32 and 0x3FFFFFFF) * 2)
-                    } else {
-                        val raw16 = ((body[vo].toInt() and 0xFF) shl 8) or (body[vo+1].toInt() and 0xFF)
-                        vo - ((raw16 and 0x3FFF) * 2)
-                    }
-                    if (target < 0 || target >= body.size) continue
-                    val targetTag = (body[target].toInt() and 0xF0) shr 4
-                    if (targetTag != 4) continue // not a string
+                    val targetOffset = if (vb0 and 0x80 != 0) {
+                        // Pointer
+                        if (dict.isWide) {
+                            val raw32 = ((body[vo].toInt() and 0xFF) shl 24) or
+                                    ((body[vo+1].toInt() and 0xFF) shl 16) or
+                                    ((body[vo+2].toInt() and 0xFF) shl 8) or
+                                    (body[vo+3].toInt() and 0xFF)
+                            vo - ((raw32 and 0x3FFFFFFF) * 2)
+                        } else {
+                            val raw16 = ((body[vo].toInt() and 0xFF) shl 8) or (body[vo+1].toInt() and 0xFF)
+                            vo - ((raw16 and 0x3FFF) * 2)
+                        }
+                    } else vo // inline value
 
-                    val strLen = body[target].toInt() and 0x0F
-                    val strStart = if (strLen == 15) {
-                        val l = body[target + 1].toInt() and 0xFF
-                        if (l and 0x80 != 0) target + 3 else target + 2
-                    } else target + 1
-                    val actualLen = if (strLen == 15) {
-                        val l = body[target + 1].toInt() and 0xFF
-                        if (l and 0x80 != 0) (l and 0x7F) or ((body[target + 2].toInt() and 0xFF) shl 7)
-                        else l
-                    } else strLen
-
-                    if (actualLen < 8 || strStart + actualLen > body.size) continue
-                    val str = body.decodeToString(strStart, strStart + minOf(actualLen, 20))
-                    if (str.matches(Regex("^20\\d{6}\\s.*"))) {
+                    if (targetOffset in dateStringOffsets) {
                         titleCandidates[keyIdx] = (titleCandidates[keyIdx] ?: 0) + 1
                     }
                 }
@@ -181,18 +198,14 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
         }
 
         if (titleCandidates.isEmpty()) {
-            Log.w(TAG, "Could not detect title key index")
+            Log.w(TAG, "Could not detect title key index (no date-pattern titles found)")
             return null
         }
 
         val titleIdx = titleCandidates.maxByOrNull { it.value }!!.key
-        Log.i(TAG, "Title key candidates: $titleCandidates, best=${titleIdx}")
+        Log.i(TAG, "Title key candidates: $titleCandidates, best=$titleIdx")
 
-        // parentUniqueId is typically titleIdx + 2 in the standard layout, but let's just
-        // use the field right after title's typical position. For now, scan for small int values
-        // near the title slot — parentUniqueId is usually a small int (folder reference).
-        // This is a heuristic; we can refine later.
-        val parentIdx = titleIdx + 1 // best guess — often adjacent
+        val parentIdx = titleIdx + 1
 
         return Pair(titleIdx, parentIdx)
     }
@@ -314,12 +327,23 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
                 }
             }
 
-            // If title detection failed (shared key mismatch), retry
+            // If title detection failed (shared key mismatch), retry.
+            // Detection triggers when: no titles found, OR most notes share the same title
+            // (e.g., all titled "Local" = wrong field decoded as title).
             val allFolderUids = activeFolders.keys + deletedFolderIds
-            var notesWithTitle = entries.count { it.type == 1 && it.title != null }
+            val noteEntries = entries.filter { it.type == 1 }
+            var notesWithTitle = noteEntries.count { it.title != null }
+            val mostCommonTitle = noteEntries.mapNotNull { it.title }.groupBy { it }
+                .maxByOrNull { it.value.size }
+            val titleLooksWrong = mostCommonTitle != null &&
+                    mostCommonTitle.value.size > noteEntries.size / 2 &&
+                    mostCommonTitle.key in knownKeywords
             var effectiveKeys = sharedKeys
 
-            if (notesWithTitle == 0 && entries.any { it.type == 1 }) {
+            if ((notesWithTitle == 0 || titleLooksWrong) && noteEntries.isNotEmpty()) {
+                if (titleLooksWrong) {
+                    Log.w(TAG, "Most notes titled '${mostCommonTitle?.key}' (${mostCommonTitle?.value?.size}/${noteEntries.size}) — likely shared key mismatch, retrying detection")
+                }
                 Log.w(TAG, "No titles found — attempting key detection")
                 val detectedTitle = detectTitleKeyIndex(db)
                 if (detectedTitle != null) {

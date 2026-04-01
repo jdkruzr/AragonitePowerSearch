@@ -40,6 +40,12 @@ interface IndexDao {
     @Query("DELETE FROM indexed_shapes WHERE length(recognizedText) = 0")
     suspend fun deleteEmptyPages(): Int
 
+    @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE noteTitle = '' OR noteTitle IS NULL")
+    suspend fun getUntitledDocumentIds(): List<String>
+
+    @Query("UPDATE indexed_shapes SET noteTitle = :title, parentUniqueId = :parentUniqueId WHERE documentId = :documentId")
+    suspend fun updateTitlesForDocument(documentId: String, title: String, parentUniqueId: String)
+
     @RawQuery
     fun rawQuery(query: androidx.sqlite.db.SupportSQLiteQuery): Int
 }

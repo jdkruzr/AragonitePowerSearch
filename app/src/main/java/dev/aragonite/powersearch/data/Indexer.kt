@@ -149,7 +149,11 @@ open class Indexer(
                 }
             }
 
-            // Step 7: Remove deleted files
+            // Step 7: Refresh titles for any untitled pages
+            onProgress(IndexProgress("Refreshing titles", 0, 0))
+            refreshTitles(noteMetadataMap)
+
+            // Step 8: Remove deleted files
             for (path in diff.deletedPaths) {
                 index.deleteByPointFile(path)
                 deleted++
@@ -267,5 +271,21 @@ open class Indexer(
         index.upsertShape(shape)
         Log.d(TAG, "File $documentId/$pageId: ${allStrokes.size} strokes → '${recognizedText.take(60)}'")
         return recognizedText.isNotEmpty()
+    }
+
+    private suspend fun refreshTitles(noteMetadataMap: Map<String, NoteMetadata>) {
+        if (noteMetadataMap.isEmpty()) {
+            Log.w(TAG, "No metadata available — skipping title refresh")
+            return
+        }
+        val untitled = index.getUntitledDocumentIds()
+        if (untitled.isEmpty()) return
+        var updated = 0
+        for (docId in untitled) {
+            val note = noteMetadataMap[docId] ?: continue
+            index.updateTitlesForDocument(docId, note.title, note.parentUniqueId)
+            updated++
+        }
+        Log.i(TAG, "Refreshed titles for $updated / ${untitled.size} untitled documents")
     }
 }

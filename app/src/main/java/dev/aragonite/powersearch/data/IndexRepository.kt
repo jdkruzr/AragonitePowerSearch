@@ -59,6 +59,11 @@ class IndexRepository(private val dao: IndexDao) {
 
     suspend fun deleteEmptyPages(): Int = dao.deleteEmptyPages()
 
+    suspend fun getUntitledDocumentIds(): List<String> = dao.getUntitledDocumentIds()
+
+    suspend fun updateTitlesForDocument(documentId: String, title: String, parentUniqueId: String) =
+        dao.updateTitlesForDocument(documentId, title, parentUniqueId)
+
     fun checkpoint() {
         dao.rawQuery(SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)"))
     }

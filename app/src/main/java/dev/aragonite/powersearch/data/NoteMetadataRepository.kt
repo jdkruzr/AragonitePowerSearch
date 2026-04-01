@@ -70,7 +70,13 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
                     val body = it.getBlob(1) ?: continue
                     val dict = FleeceDecoder.decodeAsDict(body, sharedKeys) ?: continue
                     if (!logged) {
-                        Log.i(TAG, "NOTE_TREE sample key=$key: keys=${dict.keys()}")
+                        Log.i(TAG, "NOTE_TREE sample key=$key: count=${dict.count}, isWide=${dict.isWide}, keys=${dict.keys()}")
+                        val titleVal = dict.get("title")
+                        Log.i(TAG, "NOTE_TREE title lookup: raw=${titleVal != null}, isPointer=${titleVal?.isPointer}, tag=${titleVal?.tag}")
+                        if (titleVal != null && titleVal.isPointer) {
+                            val resolved = titleVal.deref(wide = dict.isWide)
+                            Log.i(TAG, "NOTE_TREE title deref: resolved=${resolved != null}, tag=${resolved?.tag}, asString=${resolved?.asString()?.take(40)}")
+                        }
                         logged = true
                     }
                     val title = dict.getString("title") ?: continue

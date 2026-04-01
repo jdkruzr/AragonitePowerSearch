@@ -43,7 +43,7 @@ interface IndexDao {
     @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE noteTitle = '' OR noteTitle IS NULL")
     suspend fun getUntitledDocumentIds(): List<String>
 
-    @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE parentUniqueId = '' OR parentUniqueId IS NULL")
+    @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE parentUniqueId = '' OR parentUniqueId IS NULL OR parentUniqueId = 'Local'")
     suspend fun getUnfolderedDocumentIds(): List<String>
 
     @Query("SELECT DISTINCT parentUniqueId FROM indexed_shapes WHERE parentUniqueId != '' AND parentUniqueId IS NOT NULL ORDER BY parentUniqueId")

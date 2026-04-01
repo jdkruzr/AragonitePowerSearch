@@ -46,6 +46,9 @@ interface IndexDao {
     @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE parentUniqueId = '' OR parentUniqueId IS NULL")
     suspend fun getUnfolderedDocumentIds(): List<String>
 
+    @Query("SELECT DISTINCT parentUniqueId FROM indexed_shapes WHERE parentUniqueId != '' AND parentUniqueId IS NOT NULL ORDER BY parentUniqueId")
+    suspend fun getDistinctFolders(): List<String>
+
     @Query("UPDATE indexed_shapes SET noteTitle = :title, parentUniqueId = :parentUniqueId WHERE documentId = :documentId")
     suspend fun updateTitlesForDocument(documentId: String, title: String, parentUniqueId: String)
 

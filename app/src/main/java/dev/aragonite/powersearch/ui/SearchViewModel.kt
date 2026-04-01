@@ -24,7 +24,9 @@ data class SearchUiState(
     val isPaused: Boolean = false,
     val indexProgress: IndexProgress? = null,
     val indexedShapeCount: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val folders: List<String> = emptyList(),
+    val selectedFolder: String? = null  // null = all folders
 )
 
 class SearchViewModel(
@@ -41,7 +43,8 @@ class SearchViewModel(
     init {
         viewModelScope.launch {
             val count = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() }
-            _uiState.value = _uiState.value.copy(indexedShapeCount = count)
+            val folders = withContext(Dispatchers.IO) { indexRepository.getDistinctFolders() }
+            _uiState.value = _uiState.value.copy(indexedShapeCount = count, folders = folders)
         }
         // Observe the IndexingService state
         viewModelScope.launch {
@@ -67,16 +70,22 @@ class SearchViewModel(
 
     fun executeSearch() {
         val q = _query.value
+        val folder = _uiState.value.selectedFolder
         viewModelScope.launch {
             val results = withContext(Dispatchers.IO) {
                 try {
-                    indexRepository.search(q)
+                    val all = indexRepository.search(q)
+                    if (folder != null) all.filter { it.parentUniqueId == folder } else all
                 } catch (e: Exception) {
                     emptyList()
                 }
             }
             _uiState.value = _uiState.value.copy(results = results)
         }
+    }
+
+    fun selectFolder(folder: String?) {
+        _uiState.value = _uiState.value.copy(selectedFolder = folder)
     }
 
     fun startIndexing() {

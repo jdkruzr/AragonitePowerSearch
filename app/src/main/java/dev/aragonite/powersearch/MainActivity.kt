@@ -25,7 +25,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.aragonite.powersearch.R
 import dev.aragonite.powersearch.ui.SearchScreen
 import dev.aragonite.powersearch.ui.SearchViewModel
 import dev.aragonite.powersearch.ui.SearchViewModelFactory
@@ -92,16 +94,16 @@ fun PowerSearchApp(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Storage permission required",
+                        stringResource(R.string.storage_permission_title),
                         style = MaterialTheme.typography.headlineSmall
                     )
                     Text(
-                        "Power Search needs access to read handwriting data from .ksync files.",
+                        stringResource(R.string.storage_permission_message),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
                     )
                     Button(onClick = onRequestPermission) {
-                        Text("Grant Permission")
+                        Text(stringResource(R.string.grant_permission))
                     }
                 }
             }

@@ -3,10 +3,14 @@ package dev.aragonite.powersearch.ui
 // pattern: Imperative Shell
 
 import android.content.ComponentName
+import androidx.compose.ui.res.stringResource
+import dev.aragonite.powersearch.R
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -23,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -54,16 +59,16 @@ fun SearchScreen(viewModel: SearchViewModel) {
     if (showRebuildConfirm) {
         AlertDialog(
             onDismissRequest = { showRebuildConfirm = false },
-            title = { Text("Rebuild from Scratch?") },
-            text = { Text("This will delete your entire index (${uiState.indexedShapeCount} pages) and re-index everything. This could take hours. Are you sure?") },
+            title = { Text(stringResource(R.string.rebuild_dialog_title)) },
+            text = { Text(stringResource(R.string.rebuild_dialog_message, uiState.indexedShapeCount)) },
             confirmButton = {
                 Button(onClick = {
                     showRebuildConfirm = false
                     viewModel.clearAndReindex()
-                }) { Text("Rebuild") }
+                }) { Text(stringResource(R.string.rebuild_dialog_confirm)) }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showRebuildConfirm = false }) { Text("Cancel") }
+                OutlinedButton(onClick = { showRebuildConfirm = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -84,14 +89,38 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = viewModel::onQueryChange,
-                    label = { Text("Search Handwriting") },
+                    label = { Text(stringResource(R.string.search_handwriting)) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { viewModel.executeSearch() })
                 )
                 Button(onClick = viewModel::executeSearch) {
-                    Text("Search")
+                    Text(stringResource(R.string.search_button))
+                }
+            }
+
+            // Folder filter chips
+            if (uiState.folders.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = uiState.selectedFolder == null,
+                        onClick = { viewModel.selectFolder(null) },
+                        label = { Text(stringResource(R.string.folder_all)) }
+                    )
+                    for (folder in uiState.folders) {
+                        FilterChip(
+                            selected = uiState.selectedFolder == folder,
+                            onClick = { viewModel.selectFolder(folder) },
+                            label = { Text(folder) }
+                        )
+                    }
                 }
             }
 
@@ -115,21 +144,21 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 when {
                     uiState.isIndexing -> {
                         OutlinedButton(onClick = viewModel::pauseIndexing) {
-                            Text("Pause")
+                            Text(stringResource(R.string.pause_button))
                         }
                     }
                     uiState.isPaused -> {
                         Button(onClick = viewModel::resumeIndexing) {
-                            Text("Resume Indexing")
+                            Text(stringResource(R.string.resume_button))
                         }
                     }
                     else -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Button(onClick = viewModel::startIndexing, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-                                Text("Update", style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.update_button), style = MaterialTheme.typography.bodyMedium)
                             }
                             OutlinedButton(onClick = { showRebuildConfirm = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-                                Text("Rebuild", style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.rebuild_button), style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }
@@ -159,7 +188,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                             .testTag("LinearProgressIndicator")
                     )
                     Text(
-                        text = progress?.phase ?: "Starting\u2026",
+                        text = progress?.phase ?: stringResource(R.string.starting),
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
@@ -174,7 +203,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 )
                 if (uiState.isPaused) {
                     Text(
-                        text = "Indexing paused. You can close the app and resume later.",
+                        text = stringResource(R.string.indexing_paused),
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
@@ -188,10 +217,10 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = viewModel::exportIndex) {
-                        Text("Export Index", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.export_index), style = MaterialTheme.typography.labelLarge)
                     }
                     TextButton(onClick = viewModel::importIndex) {
-                        Text("Import Index", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.import_index), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -211,14 +240,14 @@ fun SearchScreen(viewModel: SearchViewModel) {
             // Results
             when {
                 query.isBlank() && uiState.indexedShapeCount == 0 -> {
-                    EmptyState("No indexed notes yet. Tap Reindex to start.")
+                    EmptyState(stringResource(R.string.no_indexed_notes))
                 }
                 query.isBlank() -> {
                     // AC3.4: Empty query shows no results
                 }
                 uiState.results.isEmpty() -> {
                     // AC3.5: No matches empty state
-                    EmptyState("No results for \"$query\"")
+                    EmptyState(stringResource(R.string.no_results, query))
                 }
                 else -> {
                     LazyColumn {
@@ -245,7 +274,7 @@ private fun SearchResultCard(shape: IndexedShape, onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = shape.noteTitle.ifBlank { "Untitled Note" },
+                text = shape.noteTitle.ifBlank { stringResource(R.string.untitled_note) },
                 style = MaterialTheme.typography.titleLarge
             )
             Spacer(modifier = Modifier.height(4.dp))

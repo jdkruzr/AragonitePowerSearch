@@ -12,12 +12,14 @@ jobs:
     steps:
       - name: Checkout PowerSearch
         uses: actions/checkout@v4
+        with:
+          path: AragonitePowerSearch
 
       - name: Checkout AragoniteHWR
         uses: actions/checkout@v4
         with:
           repository: jdkruzr/AragoniteHWR
-          path: ../AragoniteHWR
+          path: AragoniteHWR
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -29,9 +31,11 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Build debug APK
+        working-directory: AragonitePowerSearch
         run: ./gradlew :app:assembleDebug
 
       - name: Rename APK
+        working-directory: AragonitePowerSearch
         run: |
           VERSION=${GITHUB_REF_NAME}
           cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/PowerSearch-${VERSION}.apk
@@ -39,5 +43,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/PowerSearch-*.apk
+          files: AragonitePowerSearch/app/build/outputs/apk/debug/PowerSearch-*.apk
           generate_release_notes: true

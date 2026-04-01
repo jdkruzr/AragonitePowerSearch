@@ -78,27 +78,27 @@ Catches edge cases (files synced from cloud, restored from backup). Runs daily w
 
 ### Why This Belongs in Firmware
 
-| Capability | Third-Party App | Firmware Integration |
-|-----------|----------------|---------------------|
-| Trigger on note save | Poll filesystem (wasteful) | Direct callback from save path |
-| Background execution | Foreground service + notification | System service, no restrictions |
-| Power-aware scheduling | WorkManager (10-min chunks) | JobScheduler (unlimited, system) |
-| HWR access | IPC to KHwrService | Direct in-process call |
-| Search from Notes app | Separate app, context switch | Integrated into existing search UI |
-| Survive reboot mid-index | Must re-checkpoint | System service auto-restarts |
+| Capability               | Third-Party App                   | Firmware Integration               |
+| ------------------------ | --------------------------------- | ---------------------------------- |
+| Trigger on note save     | Poll filesystem (wasteful)        | Direct callback from save path     |
+| Background execution     | Foreground service + notification | System service, no restrictions    |
+| Power-aware scheduling   | WorkManager (10-min chunks)       | JobScheduler (unlimited, system)   |
+| HWR access               | IPC to KHwrService                | Direct in-process call             |
+| Search from Notes app    | Separate app, context switch      | Integrated into existing search UI |
+| Survive reboot mid-index | Must re-checkpoint                | System service auto-restarts       |
 
 ### Performance Characteristics
 
 Based on testing with AragoniteHWR on a BOOX Tab Ultra C Pro:
 
-| Metric | Value |
-|--------|-------|
-| HWR per page (batch) | ~0.5-1.5s |
-| full-text search query | <50ms |
-| Index size per 1000 pages | ~5-10 MB |
+| Metric                    | Value              |
+| ------------------------- | ------------------ |
+| HWR per page (batch)      | ~0.5-1.5s          |
+| full-text search query    | <50ms              |
+| Index size per 1000 pages | ~5-10 MB           |
 | Initial index, 1000 pages | ~20 min on charger |
-| Incremental (1 page) | <2s, imperceptible |
-| Diff reindex (no changes) | <3s |
+| Incremental (1 page)      | <2s, imperceptible |
+| Diff reindex (no changes) | <3s                |
 
 ### Data Model
 
@@ -163,6 +163,7 @@ Device A writes a note
 ```
 
 **Benefits:**
+
 - **HWR runs once across all devices** — not once per device. A 2-hour initial index on one device means zero wait on every other device.
 - **Zero additional infrastructure** — uses the existing Couchbase sync channel
 - **Conflict resolution is free** — Couchbase handles the case where two devices recognize the same page simultaneously
@@ -214,6 +215,8 @@ Fixing this is a one-line change in the shape-to-model mapping. Once the `text` 
 - **The "auto background recognition" feature becomes useful beyond the current note** — right now it runs, produces text, and then effectively throws it away when the note is closed.
 
 We confirmed this gap by examining the live Couchbase databases on a BOOX Tab Ultra C Pro running firmware 4.1.1. All 1,068 shape records in a test note had `text = ""` despite having run full-page HWR through the Notes app.
+
+The size of the recognized text database for a 12000 page notes library is about 9MB, so this isn't a matter of space constraints.
 
 ## Summary
 

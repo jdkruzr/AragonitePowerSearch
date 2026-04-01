@@ -12,7 +12,7 @@ BOOX devices re-run OCR from scratch on every search query. For a library of hun
 
 ## The Solution
 
-PowerSearch builds a persistent full-text search index of your handwriting. Each page is recognized once via the on-device MyScript engine, and the results are stored in a local database. Subsequent searches return results in milliseconds.
+PowerSearch builds a persistent full-text search index of your handwriting. Your notes app database is read into the application, each page is recognized once via the on-device handwriting recognition engine, and the results are stored in a local database completely separate from your notes app, but that can launch notes in your notes app once found. The first indexing run can take several hours depending on the size of your notes library and the speed of your device, but subsequent searches return results in milliseconds.
 
 ### What It Does
 
@@ -23,21 +23,18 @@ PowerSearch builds a persistent full-text search index of your handwriting. Each
 - Deep-links search results directly into the BOOX Notes app
 - Runs indexing as a foreground service with pause/resume support
 - Exports/imports the search index between devices
+- Filters search results by folder
 
 ### Performance
 
-| Device | SoC | Pages/min | Full library (12K pages) |
-|--------|-----|-----------|--------------------------|
-| Note Max | Snapdragon 855 | ~84 | ~2.5 hours |
-| Palma 2 Pro | Snapdragon 750G | ~50 | ~4 hours |
-| Go 10.3 Gen 2 Lumi | Snapdragon 690 | ~39 | ~5.5 hours |
+| Device             | SoC             | Pages/min | Full library (12K pages) |
+| ------------------ | --------------- | --------- | ------------------------ |
+| Note Max           | Snapdragon 855  | ~84       | ~2.5 hours               |
+| Palma 2 Pro        | Snapdragon 750G | ~50       | ~4 hours                 |
+| Go 10.3 Gen 2 Lumi | Snapdragon 690  | ~39       | ~5.5 hours               |
 
 Recognition hit rate: **100%** after single-point stroke filter fix.
 Index size: **~8MB** for 12,000 pages.
-
-### Key Discovery
-
-A single-point stroke (one point with no move/up event) causes MyScript's KHwrService to hang indefinitely, killing all subsequent recognition calls. Filtering strokes with fewer than 2 points before sending to HWR eliminates all recognition failures.
 
 ## Architecture
 
@@ -47,6 +44,7 @@ Multi-module Gradle project:
 - **`:fleece`** — Pure Kotlin decoder for Couchbase Lite's Fleece binary format
 
 Data flow:
+
 ```
 Scan .ksync/point/ files
   → Diff against Room index
@@ -87,6 +85,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ### Multi-Device
 
 Index on your fastest device, then share:
+
 1. Tap **Export Index** on the source device
 2. Copy `/sdcard/PowerSearch/power_search.db` to the target device
 3. Tap **Import Index** on the target device

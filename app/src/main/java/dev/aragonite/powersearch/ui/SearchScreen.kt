@@ -34,6 +34,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -44,6 +48,24 @@ fun SearchScreen(viewModel: SearchViewModel) {
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var showRebuildConfirm by remember { mutableStateOf(false) }
+
+    if (showRebuildConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRebuildConfirm = false },
+            title = { Text("Rebuild from Scratch?") },
+            text = { Text("This will delete your entire index (${uiState.indexedShapeCount} pages) and re-index everything. This could take hours. Are you sure?") },
+            confirmButton = {
+                Button(onClick = {
+                    showRebuildConfirm = false
+                    viewModel.clearAndReindex()
+                }) { Text("Rebuild") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showRebuildConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold { padding ->
         Column(
@@ -87,7 +109,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     } else {
                         "${uiState.indexedShapeCount} pages indexed"
                     },
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 when {
                     uiState.isIndexing -> {
@@ -105,7 +127,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                             Button(onClick = viewModel::startIndexing) {
                                 Text("Update Index")
                             }
-                            OutlinedButton(onClick = viewModel::clearAndReindex) {
+                            OutlinedButton(onClick = { showRebuildConfirm = true }) {
                                 Text("Rebuild from Scratch")
                             }
                         }
@@ -126,7 +148,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     )
                     Text(
                         text = "${progress.phase}: ${progress.current}/${progress.total}",
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyLarge
                     )
                 } else {
                     LinearProgressIndicator(
@@ -137,7 +159,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     )
                     Text(
                         text = progress?.phase ?: "Starting\u2026",
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyLarge
                     )
                 }
             } else {
@@ -152,7 +174,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 if (uiState.isPaused) {
                     Text(
                         text = "Indexing paused. You can close the app and resume later.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
@@ -165,10 +187,10 @@ fun SearchScreen(viewModel: SearchViewModel) {
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = viewModel::exportIndex) {
-                        Text("Export Index", style = MaterialTheme.typography.labelMedium)
+                        Text("Export Index", style = MaterialTheme.typography.labelLarge)
                     }
                     TextButton(onClick = viewModel::importIndex) {
-                        Text("Import Index", style = MaterialTheme.typography.labelMedium)
+                        Text("Import Index", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -178,7 +200,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 Text(
                     text = error,
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
@@ -223,7 +245,7 @@ private fun SearchResultCard(shape: IndexedShape, onClick: () -> Unit) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = shape.noteTitle.ifBlank { "Untitled Note" },
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleLarge
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(

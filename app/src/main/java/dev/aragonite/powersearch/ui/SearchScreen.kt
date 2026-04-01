@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -123,12 +124,12 @@ fun SearchScreen(viewModel: SearchViewModel) {
                         }
                     }
                     else -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = viewModel::startIndexing) {
-                                Text("Update Index")
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Button(onClick = viewModel::startIndexing, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+                                Text("Update", style = MaterialTheme.typography.bodyMedium)
                             }
-                            OutlinedButton(onClick = { showRebuildConfirm = true }) {
-                                Text("Rebuild from Scratch")
+                            OutlinedButton(onClick = { showRebuildConfirm = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+                                Text("Rebuild", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }

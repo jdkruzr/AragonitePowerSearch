@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Last verified: 2026-03-31
+Last verified: 2026-04-01
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Aragonite Power Search is an Android app for Onyx Boox e-ink tablets that builds a persistent, incrementally-updated handwriting search index. The built-in Boox search re-runs OCR from scratch on every query; this app caches recognition results in a Room + FTS database for instant search.
 
-**Status:** MVP implemented. Design plan at `docs/design-plans/2026-03-29-power-search-mvp.md`. Implementation plans at `docs/implementation-plans/2026-03-29-power-search-mvp/`. Research notes in `ARAGONITE_POWER_SEARCH.md`.
+**Status:** v0.1.0 release. Design plan at `docs/design-plans/2026-03-29-power-search-mvp.md`. Implementation plans at `docs/implementation-plans/2026-03-29-power-search-mvp/`. Research notes in `ARAGONITE_POWER_SEARCH.md`. CI builds release APKs on version tags via GitHub Actions.
 
 ## Target Platform
 
@@ -42,7 +42,9 @@ Aragonite Power Search is an Android app for Onyx Boox e-ink tablets that builds
 - **Xref entries** -- 44 bytes each: 36-byte UUID string + 4-byte offset + 4-byte length. Located via the last 4 bytes of the file.
 - **HWR** -- Handwriting Recognition. Pressure normalizes from 0-4095 (12-bit EMR) to 0.0-1.0 for AragoniteHWR.
 - **Handwriting shape types** -- Only specific `shapeType` values are handwriting (pen tools). Defined in `HandwritingShapeTypes.TYPES`: 2 (pencil), 3 (oily pen), 4 (fountain pen), 5 (brush), 15 (marker), 21 (neo brush), 22 (charcoal), 47 (square pen), 60/61 (calligraphy).
-- **NOTE_TREE** -- Couchbase database at `.ksync/couch/{userId}-NOTE_TREE.cblite2/db.sqlite3`. Contains note metadata (titles, folder structure). Accessed via SQLite + custom Fleece decoder. User ID discovered by scanning for `*-NOTE_TREE.cblite2` directory.
+- **NOTE_TREE** -- Couchbase database at `.ksync/couch/{userId}-NOTE_TREE.cblite2/db.sqlite3`. Contains note metadata (titles, folder structure, deletion status). Accessed via SQLite + custom Fleece decoder. User ID discovered by scanning for `*-NOTE_TREE.cblite2` directory.
+- **NoteTreeInfo** -- Single-pass scan result from `scanNoteTree()`: active notes with folder assignments, active folder map (UUID to name), deleted note IDs (status=0), deleted folder IDs. Used by Indexer to skip deleted notes and assign folder names.
+- **Folder extraction** -- Folder names are extracted from Fleece inline strings in NOTE_TREE BLOBs, bypassing shared key table issues. Folders are NOTE_TREE entries with `type=0`; notes have `type=1`. Folder assignment uses UUID substring matching in BLOB bytes.
 - **Per-note databases** -- Couchbase databases at `.ksync/couch/{userId}-{documentId}.cblite2/db.sqlite3`. Contain shape metadata (uniqueId, shapeType, revisionId) in Fleece-encoded BLOBs.
 - **Fleece** -- Couchbase's binary encoding format for document bodies in `kv_default.body` BLOB column. See `fleece/CLAUDE.md`.
 - **Page dimensions** -- stored in protobuf at `/sdcard/.ksync/document/{noteId}/virtual/page/pb/{pageId}`, JSON bounds field (`right`=width, `bottom`=height). Default fallback: 1404x1872.
@@ -66,17 +68,17 @@ Package: `dev.aragonite.powersearch.service`
 
 Package: `dev.aragonite.powersearch.data`
 
-- `NoteMetadataRepository` -- reads Couchbase/Fleece databases. Discovers userId, reads NOTE_TREE for titles, reads per-note DBs for shape metadata. Filters to `HandwritingShapeTypes.TYPES`.
+- `NoteMetadataRepository` -- reads Couchbase/Fleece databases. Discovers userId. `scanNoteTree()` performs a single-pass scan returning `NoteTreeInfo` (active notes with folder names, deleted note/folder IDs). Reads per-note DBs for shape metadata. Filters to `HandwritingShapeTypes.TYPES`.
 - `StrokeDataRepository` -- reads point files via `PointFileParser`, converts TinyPoints to `HWRStroke`/`HWRPoint`, reads page dimensions from protobuf JSON.
-- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data. `deleteEmptyPages()` removes pages with empty recognizedText so they get retried on next run. `checkpoint()` runs WAL checkpoint (used before export).
+- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data. `deleteEmptyPages()` removes pages with empty recognizedText so they get retried on next run. `checkpoint()` runs WAL checkpoint (used before export). `getDistinctFolders()` returns unique folder names for filter UI. `getUnfolderedDocumentIds()` finds documents with empty or stale ('Local') folder assignments for refresh.
 - `HWRRepository` -- wraps `AragoniteHWR` static API. Bind/unbind lifecycle. Returns null if not bound. Class is `open` for test overrides.
-- `Indexer` -- orchestrates full reindex pipeline. Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text). Includes HWR resilience: single-point stroke filter, retry on empty, adaptive throttle, service rebind after 20 consecutive empties, post-indexing empty-page cleanup.
+- `Indexer` -- orchestrates full reindex pipeline. Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text). Skips deleted notes (status=0) and orphan documents (no NOTE_TREE entry). Stores empty-stroke pages with empty text (phantom page fix -- keeps diff stable, no cleanup pass needed). Refreshes folder names for previously-unfoldered documents. Includes HWR resilience: single-point stroke filter, retry on empty, adaptive throttle, service rebind after 20 consecutive empties.
 
 ### Database Schema
 
 Database: `power_search.db` (Room, version 1). `SearchDatabase.close()` static method allows closing for import/overwrite.
 
-- `indexed_shapes` table -- primary key `shapeId` (UUID). Columns: `documentId`, `pageId`, `parentUniqueId`, `noteTitle`, `recognizedText`, `pointFilePath`, `pointFileModified`, `pointFileSize`, `indexedAt`.
+- `indexed_shapes` table -- primary key `shapeId` (UUID). Columns: `documentId`, `pageId`, `parentUniqueId` (stores resolved folder name, empty string for unfiled), `noteTitle`, `recognizedText`, `pointFilePath`, `pointFileModified`, `pointFileSize`, `indexedAt`.
 - `indexed_shapes_fts` -- FTS4 content-sync table indexing `recognizedText` and `noteTitle`.
 - Search queries additionally filter `length(recognizedText) > 0` to exclude empty-text entries.
 
@@ -84,8 +86,8 @@ Database: `power_search.db` (Room, version 1). `SearchDatabase.close()` static m
 
 Package: `dev.aragonite.powersearch.ui`
 
-- `SearchViewModel` -- takes `IndexRepository` + `Context`. Delegates indexing to `IndexingService` (start/pause/resume/clearAndReindex). Observes `IndexingService.state` StateFlow for progress. Exposes `SearchUiState` (results, isIndexing, isPaused, progress, count, error). Search is explicit via `executeSearch()` (no longer Flow-debounced). Also provides `exportIndex()` and `importIndex()` for database portability.
-- `SearchScreen` -- Compose UI with search field, result list, "Update Index" and "Rebuild from Scratch" buttons, animated/static progress bar, "X of Y pages indexed" label.
+- `SearchViewModel` -- takes `IndexRepository` + `Context`. Delegates indexing to `IndexingService` (start/pause/resume/clearAndReindex). Observes `IndexingService.state` StateFlow for progress. Exposes `SearchUiState` (results, isIndexing, isPaused, progress, count, error, folders, selectedFolder). Search is explicit via `executeSearch()` with client-side folder filtering. `selectFolder()` sets folder filter. Also provides `exportIndex()` and `importIndex()` for database portability.
+- `SearchScreen` -- Compose UI with search field, folder filter chips (horizontally scrollable), result list, "Update Index" and "Rebuild from Scratch" buttons (with confirmation dialog), animated/static progress bar, "X of Y pages indexed" label. All user-visible strings extracted to `res/values/strings.xml`.
 - `SearchViewModelFactory` -- manual DI wiring. Creates `IndexRepository` only (indexing delegated to service).
 
 ## Deep-Link to Notes
@@ -104,7 +106,10 @@ Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivi
 - `IndexingService.state` is a static `StateFlow` -- UI observes it without binding to the service.
 - "Rebuild from Scratch" cancels any running job, clears the index, then starts a fresh reindex.
 - Search queries are prefix-matched: each word gets a `*` suffix for search-as-you-type behavior.
+- **Deleted notes MUST be skipped during indexing.** Notes with `status=0` in NOTE_TREE and documents with no NOTE_TREE entry (orphans, reader annotations) are excluded. Checked in `Indexer.reindex()` before processing each point file.
+- **Phantom pages stored with empty text, not deleted.** Pages with no handwriting strokes are stored with `recognizedText=""` to keep the filesystem diff stable. Search queries filter them out via `length(recognizedText) > 0`. No post-indexing cleanup pass.
+- **Folder names resolved via BLOB byte matching, not shared keys.** Folder UUID substring is searched in note BLOB bytes to assign folders, avoiding shared key table ordering mismatches.
 - HWR empty result triggers retry (once, after 500ms delay) before accepting empty text.
 - After 20 consecutive empty HWR results, the service is unbound and rebound (stale connection recovery).
 - Adaptive throttle inserts delays (200-1000ms) when HWR hit rate drops below 85%, eases off above 95%.
-- Post-indexing cleanup: pages with empty `recognizedText` are deleted so they get retried on next run.
+- Stale 'Local' folder assignments are treated as unfoldered and refreshed on next index run.

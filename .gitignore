@@ -29,3 +29,6 @@ Thumbs.db
 
 # Build and test logs
 *.log
+
+# Vendor binaries (pulled from device, not for distribution)
+vendor/

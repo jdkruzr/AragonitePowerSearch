@@ -40,7 +40,7 @@ interface IndexDao {
     @Query("DELETE FROM indexed_shapes WHERE length(recognizedText) = 0")
     suspend fun deleteEmptyPages(): Int
 
-    @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE noteTitle = '' OR noteTitle IS NULL")
+    @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE noteTitle = '' OR noteTitle IS NULL OR noteTitle = 'Local'")
     suspend fun getUntitledDocumentIds(): List<String>
 
     @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE parentUniqueId = '' OR parentUniqueId IS NULL OR parentUniqueId = 'Local'")

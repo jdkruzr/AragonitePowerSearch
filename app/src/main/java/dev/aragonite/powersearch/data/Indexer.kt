@@ -29,7 +29,8 @@ open class Indexer(
     private val strokeData: StrokeDataRepository,
     private val index: IndexRepository,
     private val hwr: HWRRepository,
-    private val storageChecker: () -> Boolean = { Environment.isExternalStorageManager() }
+    private val storageChecker: () -> Boolean = { Environment.isExternalStorageManager() },
+    private val titleSlotIndex: Int = -1
 ) {
     open suspend fun reindex(onProgress: (IndexProgress) -> Unit = {}): IndexResult {
         // AC4.5: Check storage permission before accessing filesystem
@@ -71,7 +72,7 @@ open class Indexer(
             val userId = noteMetadata.discoverUserId()
             Log.i(TAG, "User ID: $userId")
             val noteTreeInfo: NoteTreeInfo = if (userId != null) {
-                noteMetadata.scanNoteTree(userId)
+                noteMetadata.scanNoteTree(userId, titleSlotIndex)
             } else NoteTreeInfo(emptyMap(), emptyMap(), emptySet(), emptySet())
             val noteMetadataMap = noteTreeInfo.notes
             Log.i(TAG, "Loaded ${noteMetadataMap.size} note metadata, ${noteTreeInfo.deletedNoteIds.size} deleted notes, ${noteTreeInfo.folders.size} folders")

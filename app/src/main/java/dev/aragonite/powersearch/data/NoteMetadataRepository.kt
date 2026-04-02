@@ -18,6 +18,57 @@ private const val TAG = "NoteMetadataRepo"
 @Suppress("SdCardPath")
 class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync")) {
 
+    /**
+     * Read a string value at a specific dict slot index, bypassing shared key lookup.
+     * Used when the user has manually identified which slot contains the title.
+     */
+    private fun readStringAtSlot(body: ByteArray, dict: dev.aragonite.fleece.FleeceDict, slotIndex: Int): String? {
+        if (slotIndex < 0 || slotIndex >= dict.count) return null
+        val headerOffset = dict.value.offset
+        val sw = dict.slotWidth
+        val vo = headerOffset + 2 + slotIndex * 2 * sw + sw
+        if (vo + sw > body.size) return null
+
+        val vb = body[vo].toInt() and 0xFF
+        // Pointer
+        if (vb and 0x80 != 0) {
+            val target = if (dict.isWide) {
+                val raw32 = ((body[vo].toInt() and 0xFF) shl 24) or
+                        ((body[vo + 1].toInt() and 0xFF) shl 16) or
+                        ((body[vo + 2].toInt() and 0xFF) shl 8) or
+                        (body[vo + 3].toInt() and 0xFF)
+                vo - ((raw32 and 0x3FFFFFFF) * 2)
+            } else {
+                val raw16 = ((body[vo].toInt() and 0xFF) shl 8) or (body[vo + 1].toInt() and 0xFF)
+                vo - ((raw16 and 0x3FFF) * 2)
+            }
+            if (target < 0 || target >= body.size) return null
+            val tTag = (body[target].toInt() and 0xF0) shr 4
+            if (tTag != 4) return null
+            val strLen = body[target].toInt() and 0x0F
+            val strStart: Int
+            val actualLen: Int
+            if (strLen == 15) {
+                actualLen = body[target + 1].toInt() and 0xFF
+                strStart = target + 2
+            } else {
+                actualLen = strLen
+                strStart = target + 1
+            }
+            if (strStart + actualLen > body.size) return null
+            return body.decodeToString(strStart, strStart + actualLen)
+        }
+        // Inline string
+        val vTag = (vb shr 4) and 0xF
+        if (vTag == 4) {
+            val strLen = vb and 0x0F
+            val strStart = vo + 1
+            if (strStart + strLen > body.size) return null
+            return body.decodeToString(strStart, strStart + strLen)
+        }
+        return null
+    }
+
     fun discoverUserId(): String? {
         val couchDir = File(ksyncRoot, "couch")
         if (!couchDir.exists()) return null
@@ -218,7 +269,7 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
      *
      * Uses byte-level folder UUID matching to avoid shared key ordering issues.
      */
-    fun scanNoteTree(userId: String): NoteTreeInfo {
+    fun scanNoteTree(userId: String, titleSlotIndex: Int = -1): NoteTreeInfo {
         val dbPath = File(ksyncRoot, "couch/$userId-NOTE_TREE.cblite2/db.sqlite3")
         if (!dbPath.exists()) return NoteTreeInfo(emptyMap(), emptyMap(), emptySet(), emptySet())
 
@@ -241,15 +292,26 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
                 while (it.moveToNext()) {
                     val key = it.getString(0)
                     val body = it.getBlob(1) ?: continue
-                    val dict = FleeceDecoder.decodeAsDict(body, sharedKeys)
+
+                    // Strip wrapper prefix if present (some devices add a Fleece dict envelope)
+                    val inner = if (body.size > 10 && (body[0].toInt() and 0xF0) == 0x70) {
+                        body.copyOfRange(10, body.size)
+                    } else body
+                    val dict = FleeceDecoder.decodeAsDict(inner, sharedKeys)
 
                     // Extract type and status (works even with mismatched shared keys since these are small ints)
                     val type = dict?.getInt("type")
                     val status = dict?.getInt("status")
-                    val title = dict?.getString("title")
                     val uid = dict?.getString("uniqueId")
 
-                    entries.add(RawEntry(key, body, type, status, title, uid))
+                    // Title: use saved slot index if available, otherwise try shared keys
+                    val title = if (titleSlotIndex >= 0 && dict != null) {
+                        readStringAtSlot(inner, dict, titleSlotIndex)
+                    } else {
+                        dict?.getString("title")
+                    }
+
+                    entries.add(RawEntry(key, inner, type, status, title, uid))
                 }
             }
             Log.i(TAG, "scanNoteTree: ${entries.size} entries")
@@ -267,7 +329,8 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
                 if (e.type == 0) {
                     val folderUid = e.uid ?: e.key
                     // Extract folder name from BLOB by scanning Fleece-encoded strings
-                    val folderName = e.title?.takeIf { it !in knownKeywords } ?: run {
+                    Log.d(TAG, "Folder ${e.key}: title='${e.title}', body size=${e.body.size}")
+                    val folderName = e.title?.takeIf { it.isNotBlank() && it !in knownKeywords } ?: run {
                         // Fallback: parse Fleece inline strings from the BLOB and find the best candidate
                         val candidates = mutableListOf<String>()
                         var pos = 0
@@ -302,6 +365,7 @@ class NoteMetadataRepository(private val ksyncRoot: File = File("/sdcard/.ksync"
                                 pos += 2
                             }
                         }
+                        Log.d(TAG, "Folder ${e.key}: ${candidates.size} candidates: $candidates")
                         // Folder names are typically short human-readable strings
                         // Filter out common non-name strings and pick the best
                         candidates.filter { s ->

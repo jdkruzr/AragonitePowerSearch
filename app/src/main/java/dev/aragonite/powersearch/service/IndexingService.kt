@@ -144,7 +144,8 @@ class IndexingService : Service() {
                 val noteMetadataRepository = NoteMetadataRepository()
                 val strokeDataRepository = StrokeDataRepository()
                 val hwrRepository = HWRRepository(applicationContext)
-                val indexer = Indexer(noteMetadataRepository, strokeDataRepository, indexRepository, hwrRepository)
+                val titleSlotIndex = dev.aragonite.powersearch.ui.getSavedTitleSlotIndex(applicationContext)
+                val indexer = Indexer(noteMetadataRepository, strokeDataRepository, indexRepository, hwrRepository, titleSlotIndex = titleSlotIndex)
 
                 val result = indexer.reindex { progress ->
                     _state.value = _state.value.copy(

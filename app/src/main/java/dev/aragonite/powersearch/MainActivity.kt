@@ -16,13 +16,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import dev.aragonite.powersearch.ui.KeyMappingScreen
+import dev.aragonite.powersearch.ui.isKeyMappingDone
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -79,33 +83,42 @@ fun PowerSearchApp(
     onRequestPermission: () -> Unit,
     viewModel: SearchViewModel
 ) {
+    val context = LocalContext.current
+    var keyMappingDone by remember { mutableStateOf(isKeyMappingDone(context)) }
+
     MaterialTheme {
-        if (hasStoragePermission) {
-            // SearchScreen provides its own Scaffold
-            SearchScreen(viewModel = viewModel)
-        } else {
-            // Permission-denied screen with its own Scaffold
-            Scaffold { padding ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        stringResource(R.string.storage_permission_title),
-                        style = MaterialTheme.typography.headlineSmall
-                    )
-                    Text(
-                        stringResource(R.string.storage_permission_message),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
-                    )
-                    Button(onClick = onRequestPermission) {
-                        Text(stringResource(R.string.grant_permission))
+        when {
+            !hasStoragePermission -> {
+                Scaffold { padding ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            stringResource(R.string.storage_permission_title),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        Text(
+                            stringResource(R.string.storage_permission_message),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
+                        )
+                        Button(onClick = onRequestPermission) {
+                            Text(stringResource(R.string.grant_permission))
+                        }
                     }
                 }
+            }
+            !keyMappingDone -> {
+                KeyMappingScreen(context = context) {
+                    keyMappingDone = true
+                }
+            }
+            else -> {
+                SearchScreen(viewModel = viewModel)
             }
         }
     }

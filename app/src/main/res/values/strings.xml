@@ -38,4 +38,7 @@
     <string name="storage_permission_title">Storage permission required</string>
     <string name="storage_permission_message">PowerSearch needs access to read handwriting data from .ksync files.</string>
     <string name="grant_permission">Grant Permission</string>
+
+    <!-- Key mapping onboarding -->
+    <string name="remap_fields">Remap Fields</string>
 </resources>

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import dev.aragonite.powersearch.ui.KeyMappingScreen
+import dev.aragonite.powersearch.ui.clearKeyMapping
 import dev.aragonite.powersearch.ui.isKeyMappingDone
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -118,7 +119,10 @@ fun PowerSearchApp(
                 }
             }
             else -> {
-                SearchScreen(viewModel = viewModel)
+                SearchScreen(viewModel = viewModel, onRemap = {
+                    clearKeyMapping(context)
+                    keyMappingDone = false
+                })
             }
         }
     }

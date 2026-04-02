@@ -30,6 +30,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -50,7 +51,7 @@ import androidx.compose.ui.unit.dp
 import dev.aragonite.powersearch.data.db.IndexedShape
 
 @Composable
-fun SearchScreen(viewModel: SearchViewModel) {
+fun SearchScreen(viewModel: SearchViewModel, onRemap: (() -> Unit)? = null) {
     val query by viewModel.query.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -159,6 +160,11 @@ fun SearchScreen(viewModel: SearchViewModel) {
                             }
                             OutlinedButton(onClick = { showRebuildConfirm = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
                                 Text(stringResource(R.string.rebuild_button), style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (onRemap != null) {
+                                TextButton(onClick = onRemap, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                                    Text(stringResource(R.string.remap_fields), style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }

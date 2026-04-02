@@ -40,5 +40,5 @@
     <string name="grant_permission">Grant Permission</string>
 
     <!-- Key mapping onboarding -->
-    <string name="remap_fields">Remap Fields</string>
+    <string name="remap_fields">Remap Titles and Folders</string>
 </resources>

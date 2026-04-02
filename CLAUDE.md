@@ -1,6 +1,7 @@
 # CLAUDE.md
 
 Last verified: 2026-04-01
+<!-- Freshness: reviewed against commits up to e5eb5a9 -->
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -44,9 +45,12 @@ Aragonite Power Search is an Android app for Onyx Boox e-ink tablets that builds
 - **Handwriting shape types** -- Only specific `shapeType` values are handwriting (pen tools). Defined in `HandwritingShapeTypes.TYPES`: 2 (pencil), 3 (oily pen), 4 (fountain pen), 5 (brush), 15 (marker), 21 (neo brush), 22 (charcoal), 47 (square pen), 60/61 (calligraphy).
 - **NOTE_TREE** -- Couchbase database at `.ksync/couch/{userId}-NOTE_TREE.cblite2/db.sqlite3`. Contains note metadata (titles, folder structure, deletion status). Accessed via SQLite + custom Fleece decoder. User ID discovered by scanning for `*-NOTE_TREE.cblite2` directory.
 - **NoteTreeInfo** -- Single-pass scan result from `scanNoteTree()`: active notes with folder assignments, active folder map (UUID to name), deleted note IDs (status=0), deleted folder IDs. Used by Indexer to skip deleted notes and assign folder names.
-- **Folder extraction** -- Folder names are extracted from Fleece inline strings in NOTE_TREE BLOBs, bypassing shared key table issues. Folders are NOTE_TREE entries with `type=0`; notes have `type=1`. Folder assignment uses UUID substring matching in BLOB bytes.
+- **Folder extraction** -- Folder names are extracted in priority order: (1) title from shared keys or slot-index read, if `isNotBlank` and not a known keyword; (2) fallback scanner that parses Fleece inline strings from the BLOB and picks the best short, non-UUID, non-keyword candidate. Folders are NOTE_TREE entries with `type=0`; notes have `type=1`. Folder assignment uses UUID substring matching in BLOB bytes.
 - **Per-note databases** -- Couchbase databases at `.ksync/couch/{userId}-{documentId}.cblite2/db.sqlite3`. Contain shape metadata (uniqueId, shapeType, revisionId) in Fleece-encoded BLOBs.
 - **Fleece** -- Couchbase's binary encoding format for document bodies in `kv_default.body` BLOB column. See `fleece/CLAUDE.md`.
+- **Fleece wrapper prefix** -- Some devices (Palma-series) wrap Fleece BLOBs in a 10-byte dict envelope. Detected by checking `body[0] & 0xF0 == 0x70` when `body.size > 10`; stripped to `body[10:]` before decoding. Applied in both `scanNoteTree()` and `loadSampleSlotValues()`.
+- **Shared key mismatch** -- Couchbase shared key tables can become inconsistent with BLOB contents across firmware updates or device migrations. The app handles this via: (1) automatic title detection by scanning for date-pattern strings (`20YYMMDD ...`) in Fleece BLOBs, (2) user-guided key mapping onboarding, (3) direct slot-index reads that bypass shared key lookup entirely.
+- **Key mapping** -- User-guided onboarding flow where the user identifies which Fleece dict slot contains the note title and folder name. Slot indices are saved to SharedPreferences (`key_mapping` prefs, keys: `title_slot_index`, `folder_slot_index`, `mapping_done`). The `titleSlotIndex` is passed through `Indexer` to `scanNoteTree()` for `readStringAtSlot()` bypass.
 - **Page dimensions** -- stored in protobuf at `/sdcard/.ksync/document/{noteId}/virtual/page/pb/{pageId}`, JSON bounds field (`right`=width, `bottom`=height). Default fallback: 1404x1872.
 
 ## Architecture
@@ -68,11 +72,11 @@ Package: `dev.aragonite.powersearch.service`
 
 Package: `dev.aragonite.powersearch.data`
 
-- `NoteMetadataRepository` -- reads Couchbase/Fleece databases. Discovers userId. `scanNoteTree()` performs a single-pass scan returning `NoteTreeInfo` (active notes with folder names, deleted note/folder IDs). Reads per-note DBs for shape metadata. Filters to `HandwritingShapeTypes.TYPES`.
+- `NoteMetadataRepository` -- reads Couchbase/Fleece databases. Discovers userId. `scanNoteTree(userId, titleSlotIndex)` performs a single-pass scan returning `NoteTreeInfo` (active notes with folder names, deleted note/folder IDs). When `titleSlotIndex >= 0`, reads titles via `readStringAtSlot()` bypassing shared key lookup. Strips 10-byte wrapper prefix from BLOBs when detected. Falls back to automatic `detectTitleKeyIndex()` when titles are missing or most notes share a keyword title (e.g., "Local"). Reads per-note DBs for shape metadata. Filters to `HandwritingShapeTypes.TYPES`.
 - `StrokeDataRepository` -- reads point files via `PointFileParser`, converts TinyPoints to `HWRStroke`/`HWRPoint`, reads page dimensions from protobuf JSON.
-- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data. `deleteEmptyPages()` removes pages with empty recognizedText so they get retried on next run. `checkpoint()` runs WAL checkpoint (used before export). `getDistinctFolders()` returns unique folder names for filter UI. `getUnfolderedDocumentIds()` finds documents with empty or stale ('Local') folder assignments for refresh.
+- `IndexRepository` -- Room DAO wrapper. Computes `FileDiff` (new/modified/deleted) by comparing filesystem state against `indexed_shapes` table. FTS4 search via content-sync join. Prefix search: appends `*` to each whitespace-delimited word for search-as-you-type. `clearIndex()` deletes all indexed data. `deleteEmptyPages()` removes pages with empty recognizedText so they get retried on next run. `checkpoint()` runs WAL checkpoint (used before export). `getDistinctFolders()` returns unique folder names for filter UI. `getUnfolderedDocumentIds()` finds documents with empty or stale ('Local') folder assignments for refresh. `getUntitledDocumentIds()` finds documents with empty, null, or stale 'Local' titles for refresh.
 - `HWRRepository` -- wraps `AragoniteHWR` static API. Bind/unbind lifecycle. Returns null if not bound. Class is `open` for test overrides.
-- `Indexer` -- orchestrates full reindex pipeline. Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text). Skips deleted notes (status=0) and orphan documents (no NOTE_TREE entry). Stores empty-stroke pages with empty text (phantom page fix -- keeps diff stable, no cleanup pass needed). Refreshes folder names for previously-unfoldered documents. Includes HWR resilience: single-point stroke filter, retry on empty, adaptive throttle, service rebind after 20 consecutive empties.
+- `Indexer` -- orchestrates full reindex pipeline. Constructor takes `titleSlotIndex` (from SharedPreferences key mapping, default -1). Reports `IndexProgress`. Returns `IndexResult` with counts. Checks storage permission before filesystem access. Gracefully handles missing HWR service (indexes without recognition text). Skips deleted notes (status=0) and orphan documents (no NOTE_TREE entry). Stores empty-stroke pages with empty text (phantom page fix -- keeps diff stable, no cleanup pass needed). Refreshes both folder names and titles for previously-unfoldered/untitled documents (including stale 'Local' values). Includes HWR resilience: single-point stroke filter, retry on empty, adaptive throttle, service rebind after 20 consecutive empties.
 
 ### Database Schema
 
@@ -88,7 +92,12 @@ Package: `dev.aragonite.powersearch.ui`
 
 - `SearchViewModel` -- takes `IndexRepository` + `Context`. Delegates indexing to `IndexingService` (start/pause/resume/clearAndReindex). Observes `IndexingService.state` StateFlow for progress. Exposes `SearchUiState` (results, isIndexing, isPaused, progress, count, error, folders, selectedFolder). Search is explicit via `executeSearch()` with client-side folder filtering. `selectFolder()` sets folder filter. Also provides `exportIndex()` and `importIndex()` for database portability.
 - `SearchScreen` -- Compose UI with search field, folder filter chips (horizontally scrollable), result list, "Update Index" and "Rebuild from Scratch" buttons (with confirmation dialog), animated/static progress bar, "X of Y pages indexed" label. All user-visible strings extracted to `res/values/strings.xml`.
+- `KeyMappingScreen` -- Onboarding Compose UI shown on first launch (before search). Reads a sample NOTE_TREE BLOB, decodes all dict slot values, and presents them for the user to identify the title and folder name slots. Saves slot indices to SharedPreferences (`key_mapping` prefs). Two-step flow: pick title slot, then pick folder slot (or "None of these"). Strips wrapper prefix before decoding. Checks `isKeyMappingDone()` / `clearKeyMapping()` for state management.
 - `SearchViewModelFactory` -- manual DI wiring. Creates `IndexRepository` only (indexing delegated to service).
+
+### App Navigation Flow
+
+`MainActivity` gates screens in order: (1) storage permission request, (2) `KeyMappingScreen` onboarding (first launch only, gated by `isKeyMappingDone()`), (3) `SearchScreen`. Key mapping must complete before search is accessible.
 
 ## Deep-Link to Notes
 
@@ -113,3 +122,7 @@ Notes open via explicit Intent to `com.onyx.android.note/.note.ui.ScribbleActivi
 - After 20 consecutive empty HWR results, the service is unbound and rebound (stale connection recovery).
 - Adaptive throttle inserts delays (200-1000ms) when HWR hit rate drops below 85%, eases off above 95%.
 - Stale 'Local' folder assignments are treated as unfoldered and refreshed on next index run.
+- Stale 'Local' note titles are treated as untitled and refreshed on next index run.
+- **Key mapping onboarding MUST complete before search.** `MainActivity` gates the `SearchScreen` behind `isKeyMappingDone()`. Without key mapping, title/folder extraction may fail on devices with shared key mismatches.
+- **Wrapper prefix MUST be stripped before Fleece decoding.** BLOBs starting with `0x7_` (top nibble = 7) and size > 10 have a 10-byte dict envelope that must be removed. Both `scanNoteTree()` and `loadSampleSlotValues()` apply this check.
+- **Title slot index flows from SharedPreferences through Indexer to scanNoteTree.** `IndexingService` reads `getSavedTitleSlotIndex()`, passes to `Indexer` constructor, which passes to `scanNoteTree(userId, titleSlotIndex)`. When >= 0, `readStringAtSlot()` bypasses shared key lookup entirely.

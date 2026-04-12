@@ -40,6 +40,9 @@ interface IndexDao {
     @Query("DELETE FROM indexed_shapes WHERE length(recognizedText) = 0")
     suspend fun deleteEmptyPages(): Int
 
+    @Query("DELETE FROM indexed_shapes WHERE length(recognizedText) = 0 AND pointFileModified >= :cutoffMs")
+    suspend fun deleteEmptyPagesModifiedSince(cutoffMs: Long): Int
+
     @Query("SELECT DISTINCT documentId FROM indexed_shapes WHERE noteTitle = '' OR noteTitle IS NULL OR noteTitle = 'Local'")
     suspend fun getUntitledDocumentIds(): List<String>
 

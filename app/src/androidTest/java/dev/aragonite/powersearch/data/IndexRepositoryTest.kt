@@ -492,6 +492,126 @@ class IndexRepositoryTest {
         assertEquals(0, resultsParens.size)
     }
 
+    // ===== Time-bounded empty-page retry =====
+
+    /**
+     * deleteEmptyPagesModifiedSince(cutoffMs) removes empty-recognizedText rows
+     * whose pointFileModified is >= cutoffMs, and leaves everything else alone.
+     *
+     * This is the recovery path for the "black hole" scenario: when an earlier
+     * indexing run had HWR unavailable, shapes were persisted with empty text
+     * and the same (mtime, size) as the file, so computeDiff() skips them
+     * forever. Time-bounded deletion lets users retry recent pages without
+     * stomping on successfully-OCR'd rows.
+     */
+    @Test
+    fun testDeleteEmptyPagesModifiedSinceRemovesOnlyEmptyRecentRows() = runTest {
+        val cutoff = 5_000L
+
+        // Empty + recent (mtime >= cutoff) -> should be deleted
+        repository.upsertShape(IndexedShape(
+            shapeId = "empty-recent",
+            documentId = "doc1", pageId = "p1", parentUniqueId = "f1",
+            noteTitle = "Recent Empty", recognizedText = "",
+            pointFilePath = "/path/empty-recent",
+            pointFileModified = 10_000L, pointFileSize = 100L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        // Empty + at the cutoff boundary -> should be deleted (inclusive)
+        repository.upsertShape(IndexedShape(
+            shapeId = "empty-at-cutoff",
+            documentId = "doc1", pageId = "p2", parentUniqueId = "f1",
+            noteTitle = "Boundary Empty", recognizedText = "",
+            pointFilePath = "/path/empty-at-cutoff",
+            pointFileModified = cutoff, pointFileSize = 100L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        // Empty + old (mtime < cutoff) -> should be KEPT
+        repository.upsertShape(IndexedShape(
+            shapeId = "empty-old",
+            documentId = "doc1", pageId = "p3", parentUniqueId = "f1",
+            noteTitle = "Old Empty", recognizedText = "",
+            pointFilePath = "/path/empty-old",
+            pointFileModified = 1_000L, pointFileSize = 100L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        // Non-empty + recent -> should be KEPT (don't stomp on valid output)
+        repository.upsertShape(IndexedShape(
+            shapeId = "text-recent",
+            documentId = "doc1", pageId = "p4", parentUniqueId = "f1",
+            noteTitle = "Recent Text", recognizedText = "hello world",
+            pointFilePath = "/path/text-recent",
+            pointFileModified = 10_000L, pointFileSize = 100L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        // Non-empty + old -> should be KEPT
+        repository.upsertShape(IndexedShape(
+            shapeId = "text-old",
+            documentId = "doc1", pageId = "p5", parentUniqueId = "f1",
+            noteTitle = "Old Text", recognizedText = "world hello",
+            pointFilePath = "/path/text-old",
+            pointFileModified = 1_000L, pointFileSize = 100L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        assertEquals(5, repository.getIndexedShapeCount())
+
+        val deleted = repository.deleteEmptyPagesModifiedSince(cutoff)
+
+        assertEquals(2, deleted)
+        assertEquals(3, repository.getIndexedShapeCount())
+
+        // Spot-check survivors via search (non-empty rows are still searchable).
+        val hello = repository.search("hello")
+        assertEquals(2, hello.size)
+
+        // The "empty-old" row survives even though it has no text -- verify by
+        // re-running computeDiff with matching metadata, which should skip it.
+        val currentFiles = mapOf(
+            "/path/empty-old" to Pair(1_000L, 100L)
+        )
+        val diff = repository.computeDiff(currentFiles)
+        assertEquals(0, diff.newFiles.size)
+        assertEquals(0, diff.modifiedFiles.size)
+    }
+
+    /**
+     * After deletion, a subsequent computeDiff() sees the file as "new" so
+     * it flows through HWR again. This is the whole point of the feature:
+     * removing the row makes the file re-indexable.
+     */
+    @Test
+    fun testDeletedEmptyRowsReappearAsNewInDiff() = runTest {
+        val filePath = "/sdcard/.ksync/point/doc1/page1/rev1"
+        val mtime = 10_000L
+
+        repository.upsertShape(IndexedShape(
+            shapeId = "shape-1",
+            documentId = "doc1", pageId = "page1", parentUniqueId = "f1",
+            noteTitle = "Test", recognizedText = "",
+            pointFilePath = filePath,
+            pointFileModified = mtime, pointFileSize = 100L,
+            indexedAt = System.currentTimeMillis()
+        ))
+
+        // Before deletion: file matches DB, diff is empty.
+        val beforeDiff = repository.computeDiff(mapOf(filePath to Pair(mtime, 100L)))
+        assertEquals(0, beforeDiff.newFiles.size)
+
+        // Delete empty rows with mtime >= 5000.
+        assertEquals(1, repository.deleteEmptyPagesModifiedSince(5_000L))
+
+        // After deletion: same filesystem state shows up as "new" and will
+        // flow through the HWR pipeline on the next indexing run.
+        val afterDiff = repository.computeDiff(mapOf(filePath to Pair(mtime, 100L)))
+        assertEquals(1, afterDiff.newFiles.size)
+        assertEquals(filePath, afterDiff.newFiles[0].absolutePath)
+    }
+
     /**
      * Upsert replaces existing shape (same shapeId)
      */

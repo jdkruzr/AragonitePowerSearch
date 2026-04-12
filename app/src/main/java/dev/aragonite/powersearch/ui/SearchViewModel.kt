@@ -104,6 +104,26 @@ class SearchViewModel(
         IndexingService.clearAndReindex(context)
     }
 
+    /**
+     * Delete empty-text rows whose point file was modified in the last [days]
+     * days, then kick a normal indexing run. The diff will see those files as
+     * "new" and re-OCR them through HWR. Existing non-empty rows are left
+     * untouched.
+     */
+    fun retryEmptyPagesSince(days: Int) {
+        if (days <= 0) return
+        viewModelScope.launch {
+            val cutoffMs = System.currentTimeMillis() - days.toLong() * 24L * 60L * 60L * 1000L
+            val deleted = withContext(Dispatchers.IO) {
+                indexRepository.deleteEmptyPagesModifiedSince(cutoffMs)
+            }
+            Log.i("SearchViewModel", "Retry: deleted $deleted empty rows from last $days days")
+            val count = withContext(Dispatchers.IO) { indexRepository.getIndexedShapeCount() }
+            _uiState.value = _uiState.value.copy(indexedShapeCount = count)
+            IndexingService.start(context)
+        }
+    }
+
     @Suppress("SdCardPath")
     fun exportIndex() {
         viewModelScope.launch {

@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -56,6 +58,7 @@ fun SearchScreen(viewModel: SearchViewModel, onRemap: (() -> Unit)? = null) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showRebuildConfirm by remember { mutableStateOf(false) }
+    var retryDaysInput by remember { mutableStateOf("7") }
 
     if (showRebuildConfirm) {
         AlertDialog(
@@ -214,6 +217,45 @@ fun SearchScreen(viewModel: SearchViewModel, onRemap: (() -> Unit)? = null) {
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
+            }
+
+            // Retry-N-days controls
+            if (!uiState.isIndexing) {
+                val parsedDays = retryDaysInput.toIntOrNull()
+                val retryEnabled = parsedDays != null && parsedDays > 0
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = retryDaysInput,
+                        onValueChange = { input ->
+                            // Keep the field numeric-only; allow empty so users can retype.
+                            if (input.isEmpty() || input.all { it.isDigit() }) {
+                                retryDaysInput = input
+                            }
+                        },
+                        label = { Text(stringResource(R.string.retry_days_label)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(96.dp)
+                    )
+                    Button(
+                        onClick = { parsedDays?.let { viewModel.retryEmptyPagesSince(it) } },
+                        enabled = retryEnabled,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text(stringResource(R.string.retry_days_button), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.retry_days_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // Export/Import controls

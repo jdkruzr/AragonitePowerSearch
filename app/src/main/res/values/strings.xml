@@ -41,4 +41,9 @@
 
     <!-- Key mapping onboarding -->
     <string name="remap_fields">Remap Titles and Folders</string>
+
+    <!-- Retry last N days -->
+    <string name="retry_days_label">Days</string>
+    <string name="retry_days_button">Retry Last N Days</string>
+    <string name="retry_days_hint">Retry HWR on empty pages modified in the last N days</string>
 </resources>

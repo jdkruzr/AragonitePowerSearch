@@ -59,6 +59,16 @@ class IndexRepository(private val dao: IndexDao) {
 
     suspend fun deleteEmptyPages(): Int = dao.deleteEmptyPages()
 
+    /**
+     * Delete rows with empty recognizedText whose point file was modified on or
+     * after the given cutoff. Used by the "retry last N days" feature to
+     * recover from earlier runs where HWR was unavailable: removed rows get
+     * re-picked-up as "new" by computeDiff() on the next indexing run.
+     * Returns the number of rows deleted.
+     */
+    suspend fun deleteEmptyPagesModifiedSince(cutoffMs: Long): Int =
+        dao.deleteEmptyPagesModifiedSince(cutoffMs)
+
     suspend fun getUntitledDocumentIds(): List<String> = dao.getUntitledDocumentIds()
 
     suspend fun getUnfolderedDocumentIds(): List<String> = dao.getUnfolderedDocumentIds()

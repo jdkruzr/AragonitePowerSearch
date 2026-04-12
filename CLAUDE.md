@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Aragonite Power Search is an Android app for Onyx Boox e-ink tablets that builds a persistent, incrementally-updated handwriting search index. The built-in Boox search re-runs OCR from scratch on every query; this app caches recognition results in a Room + FTS database for instant search.
 
-**Status:** v0.1.0 release. Design plan at `docs/design-plans/2026-03-29-power-search-mvp.md`. Implementation plans at `docs/implementation-plans/2026-03-29-power-search-mvp/`. Research notes in `ARAGONITE_POWER_SEARCH.md`. CI builds release APKs on version tags via GitHub Actions.
+**Status:** v0.2.0 release. Design plan at `docs/design-plans/2026-03-29-power-search-mvp.md`. Implementation plans at `docs/implementation-plans/2026-03-29-power-search-mvp/`. Research notes in `ARAGONITE_POWER_SEARCH.md`. CI builds release APKs on version tags via GitHub Actions.
 
 ## Target Platform
 

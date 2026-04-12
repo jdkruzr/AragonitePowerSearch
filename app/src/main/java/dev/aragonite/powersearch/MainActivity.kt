@@ -2,11 +2,16 @@ package dev.aragonite.powersearch
 
 // pattern: Imperative Shell
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.IBinder
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,6 +46,21 @@ class MainActivity : ComponentActivity() {
 
     private var hasStoragePermission by mutableStateOf(false)
 
+    // Prewarm binding for com.onyx.android.ksync/.service.KHwrService.
+    // Held for the Activity lifetime so the ksync process is already running
+    // by the time the user triggers indexing. Uses its own ServiceConnection
+    // (not AragoniteHWR's singleton) so Indexer's finally-block unbind() won't
+    // tear it down. See CLAUDE.md invariant "HWR prewarm".
+    private var ksyncPrewarmBound = false
+    private val ksyncPrewarmConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            Log.i(TAG_PREWARM, "ksync prewarm connected")
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            Log.w(TAG_PREWARM, "ksync prewarm disconnected")
+        }
+    }
+
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
@@ -50,6 +70,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         hasStoragePermission = Environment.isExternalStorageManager()
+
+        prewarmKsync()
 
         val viewModel: SearchViewModel by viewModels {
             SearchViewModelFactory(applicationContext)
@@ -69,12 +91,49 @@ class MainActivity : ComponentActivity() {
         hasStoragePermission = Environment.isExternalStorageManager()
     }
 
+    override fun onDestroy() {
+        if (ksyncPrewarmBound) {
+            try {
+                unbindService(ksyncPrewarmConnection)
+                Log.i(TAG_PREWARM, "ksync prewarm unbound")
+            } catch (e: Exception) {
+                Log.w(TAG_PREWARM, "ksync prewarm unbind threw: ${e.message}")
+            }
+            ksyncPrewarmBound = false
+        }
+        super.onDestroy()
+    }
+
+    private fun prewarmKsync() {
+        val intent = Intent().apply {
+            component = ComponentName(
+                "com.onyx.android.ksync",
+                "com.onyx.android.ksync.service.KHwrService"
+            )
+        }
+        ksyncPrewarmBound = try {
+            bindService(intent, ksyncPrewarmConnection, Context.BIND_AUTO_CREATE)
+        } catch (e: Exception) {
+            Log.w(TAG_PREWARM, "ksync prewarm bind threw: ${e.message}")
+            false
+        }
+        if (!ksyncPrewarmBound) {
+            Log.w(TAG_PREWARM, "ksync prewarm bindService returned false")
+        } else {
+            Log.i(TAG_PREWARM, "ksync prewarm bind initiated")
+        }
+    }
+
     private fun requestStoragePermission() {
         val intent = Intent(
             Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
             Uri.parse("package:$packageName")
         )
         storagePermissionLauncher.launch(intent)
+    }
+
+    companion object {
+        private const val TAG_PREWARM = "KsyncPrewarm"
     }
 }
 
